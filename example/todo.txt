@@ -1,0 +1,7 @@
+(A) Thank Mom for the meatballs @phone
+(B) Schedule Goodwill pickup +GarageSale @phone
+Post signs around the neighborhood +GarageSale
+2011-03-02 Document +TodoTxt task format due:2011-03-05
+x 2011-03-03 2011-03-01 Review Tim's pull request +TodoTxtTouch @github
+Learn how to add 2+2
+Email SoAndSo at soandso@example.com
