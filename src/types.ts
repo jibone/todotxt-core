@@ -49,3 +49,32 @@ export interface TodoItem {
    */
   extensions: Record<string, string>;
 }
+
+/**
+ * A parsed todo normalized into a JSON-friendly record.
+ *
+ * Unlike {@link TodoItem}, inline metadata is separated out of
+ * {@link TodoRecord.description} into dedicated fields.
+ */
+export interface TodoRecord {
+  /** True when the line starts with `x ` (lowercase and followed by a space). */
+  completed: boolean;
+  /** Uppercase priority letter, e.g. `"A"` for `(A)`, or `null`. */
+  priority: string | null;
+  /** Completion date in `YYYY-MM-DD` form, or `null`. */
+  completedAt: string | null;
+  /** Creation date in `YYYY-MM-DD` form, or `null`. */
+  createdAt: string | null;
+  /** Task text with projects, contexts, and `key:value` metadata removed. */
+  description: string;
+  /** Projects found in the text, without the leading `+`. */
+  projects: string[];
+  /** Contexts found in the text, without the leading `@`. */
+  contexts: string[];
+  /**
+   * Additional `key:value` metadata found in the text.
+   *
+   * If a key appears more than once, the last value wins.
+   */
+  data: Record<string, string>;
+}

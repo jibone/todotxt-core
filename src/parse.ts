@@ -1,8 +1,8 @@
+import { parseMetadata } from "./metadata.ts";
 import type { TodoItem } from "./types.ts";
 
 const PRIORITY_PATTERN = /^\(([A-Z])\) /;
 const LEADING_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})(?: |$)/;
-const EXTENSION_PATTERN = /^([^:\s]+):([^:\s]+)$/;
 
 /**
  * Consume a `YYYY-MM-DD` date from the start of `input`.
@@ -22,36 +22,6 @@ function takeLeadingDate(input: string): [date: string | null, rest: string] {
   }
 
   return [date, input.slice(match[0]!.length)];
-}
-
-function parseMetadata(text: string): Pick<
-  TodoItem,
-  "projects" | "contexts" | "extensions"
-> {
-  const projects: string[] = [];
-  const contexts: string[] = [];
-  const extensions: Record<string, string> = {};
-
-  for (const token of text.split(/\s+/)) {
-    if (token.startsWith("+") && token.length > 1) {
-      projects.push(token.slice(1));
-      continue;
-    }
-
-    if (token.startsWith("@") && token.length > 1) {
-      contexts.push(token.slice(1));
-      continue;
-    }
-
-    const extension = EXTENSION_PATTERN.exec(token);
-    const key = extension?.[1];
-    const value = extension?.[2];
-    if (key !== undefined && value !== undefined) {
-      extensions[key] = value;
-    }
-  }
-
-  return { projects, contexts, extensions };
 }
 
 /**
