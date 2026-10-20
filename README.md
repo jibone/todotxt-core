@@ -37,6 +37,31 @@ for (const item of items) {
 | `contexts`       | Contexts without the `@` prefix                                |
 | `extensions`     | `key:value` metadata (`{ due: "2011-03-05" }`)                 |
 
+### Normalized records
+
+`all()` returns a `TodoRecord` for each non-empty line, with inline metadata
+separated out of the description:
+
+```ts
+const records = await todos.all();
+
+for (const todo of records) {
+  console.log(todo.completed, todo.priority, todo.description);
+  console.log(todo.projects, todo.contexts, todo.data);
+}
+```
+
+| Field         | Description                                                     |
+| ------------- | --------------------------------------------------------------- |
+| `completed`   | `true` when the line starts with `x `                           |
+| `priority`    | Uppercase letter from `(A)`–`(Z)`, or `null`                    |
+| `completedAt` | `YYYY-MM-DD` completion date, or `null`                         |
+| `createdAt`   | `YYYY-MM-DD` creation date, or `null`                           |
+| `description` | Task text with projects, contexts, and `key:value` tags removed |
+| `projects`    | Projects without the `+` prefix                                 |
+| `contexts`    | Contexts without the `@` prefix                                 |
+| `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                  |
+
 The parser also works without the client wrapper:
 
 ```ts

@@ -1,10 +1,13 @@
 import { parseDocument } from "./parse.ts";
-import type { TodoFileHooks, TodoItem } from "./types.ts";
+import { toTodoRecord } from "./record.ts";
+import type { TodoFileHooks, TodoItem, TodoRecord } from "./types.ts";
 
 /** The read interface returned by {@link createTodoTxt}. */
 export interface TodoTxtClient {
   /** Read the todo.txt contents through the hook and parse them. */
   read: () => Promise<TodoItem[]>;
+  /** Read the todo.txt contents and return JSON-friendly todo records. */
+  all: () => Promise<TodoRecord[]>;
 }
 
 /**
@@ -15,10 +18,15 @@ export interface TodoTxtClient {
  * once they are implemented.
  */
 export function createTodoTxt(hooks: TodoFileHooks): TodoTxtClient {
+  async function read(): Promise<TodoItem[]> {
+    const contents = await hooks.read();
+    return parseDocument(contents);
+  }
+
   return {
-    async read() {
-      const contents = await hooks.read();
-      return parseDocument(contents);
+    read,
+    async all() {
+      return (await read()).map(toTodoRecord);
     },
   };
 }
