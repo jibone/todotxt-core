@@ -5,3 +5,4 @@ Post signs around the neighborhood +GarageSale
 x 2011-03-03 2011-03-01 Review Tim's pull request +TodoTxtTouch @github
 Learn how to add 2+2
 Email SoAndSo at soandso@example.com
+x 2011-03-04 Update README +TodoTxt

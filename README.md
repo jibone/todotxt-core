@@ -62,6 +62,33 @@ for (const todo of records) {
 | `contexts`    | Contexts without the `@` prefix                                 |
 | `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                  |
 
+### Projects
+
+Project queries are lazy: chaining filters does no IO, and awaiting a query
+reads the file once.
+
+```ts
+// Unique project names, alphabetically sorted.
+await todos.projects(); // ["GarageSale", "TodoTxt"]
+
+// Projects with at least one unfinished item.
+await todos.projects().pending();
+
+// Projects whose items are all completed.
+await todos.projects().completed();
+
+// Every record in a project, pending and completed, in file order.
+await todos.project("TodoTxt");
+
+// Only pending or only completed records in a project.
+await todos.project("TodoTxt").pending();
+await todos.project("TodoTxt").completed();
+```
+
+A project that contains both pending and completed items is listed by
+`pending()` and not by `completed()`. Project names are matched exactly and
+case-sensitively; an unknown name resolves to an empty array.
+
 The parser also works without the client wrapper:
 
 ```ts
@@ -71,13 +98,13 @@ const item = parseLine("(A) Call Mom +Family @phone");
 const items = parseDocument(contents);
 ```
 
-Writing, filtering, and aggregate helpers such as listing all projects are not
-implemented yet.
+Writing is not implemented yet.
 
 ## Example
 
 ```sh
-bun example/todo.ts
+bun example/todo-all.ts
+bun example/todo-project.ts
 ```
 
 ## Development
