@@ -1,5 +1,10 @@
 import { parseDocument } from "./parse.ts";
+import {
+  createProjectListQuery,
+  createProjectTasksQuery,
+} from "./project.ts";
 import { toTodoRecord } from "./record.ts";
+import type { ProjectListQuery, ProjectTasksQuery } from "./project.ts";
 import type { TodoFileHooks, TodoItem, TodoRecord } from "./types.ts";
 
 /** The read interface returned by {@link createTodoTxt}. */
@@ -8,6 +13,10 @@ export interface TodoTxtClient {
   read: () => Promise<TodoItem[]>;
   /** Read the todo.txt contents and return JSON-friendly todo records. */
   all: () => Promise<TodoRecord[]>;
+  /** List unique project names, alphabetically sorted. */
+  projects: () => ProjectListQuery;
+  /** Query the items tagged with a single project name. */
+  project: (name: string) => ProjectTasksQuery;
 }
 
 /**
@@ -27,6 +36,12 @@ export function createTodoTxt(hooks: TodoFileHooks): TodoTxtClient {
     read,
     async all() {
       return (await read()).map(toTodoRecord);
+    },
+    projects() {
+      return createProjectListQuery(read);
+    },
+    project(name) {
+      return createProjectTasksQuery(read, name);
     },
   };
 }
