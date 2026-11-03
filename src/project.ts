@@ -1,4 +1,5 @@
 import { toTodoRecord } from "./record.ts";
+import type { ContextListQuery, ContextTasksQuery } from "./context.ts";
 import type { TodoItem, TodoRecord } from "./types.ts";
 
 /** Status filter accepted by the project query builders. */
@@ -30,6 +31,10 @@ export interface ProjectTasksQuery extends PromiseLike<TodoRecord[]> {
   pending: () => ProjectTasksQuery;
   /** Only items from the project that are completed. */
   completed: () => ProjectTasksQuery;
+  /** List the contexts used by items in this project, alphabetically sorted. */
+  contexts: () => ContextListQuery;
+  /** Narrow this project query to items that also carry `name`. */
+  context: (name: string) => ContextTasksQuery;
 }
 
 function matchesStatus(
@@ -97,35 +102,4 @@ export function listProjectTasks(
         matchesStatus(item.completed, status),
     )
     .map(toTodoRecord);
-}
-
-/** Create a lazy query over project names backed by `read`. */
-export function createProjectListQuery(
-  read: () => Promise<TodoItem[]>,
-  status?: ProjectStatus,
-): ProjectListQuery {
-  return {
-    pending: () => createProjectListQuery(read, "pending"),
-    completed: () => createProjectListQuery(read, "completed"),
-    then: (onfulfilled, onrejected) =>
-      read()
-        .then((items) => listProjects(items, status))
-        .then(onfulfilled, onrejected),
-  };
-}
-
-/** Create a lazy query over the items in `name` backed by `read`. */
-export function createProjectTasksQuery(
-  read: () => Promise<TodoItem[]>,
-  name: string,
-  status?: ProjectStatus,
-): ProjectTasksQuery {
-  return {
-    pending: () => createProjectTasksQuery(read, name, "pending"),
-    completed: () => createProjectTasksQuery(read, name, "completed"),
-    then: (onfulfilled, onrejected) =>
-      read()
-        .then((items) => listProjectTasks(items, name, status))
-        .then(onfulfilled, onrejected),
-  };
 }

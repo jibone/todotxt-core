@@ -1,9 +1,12 @@
 import { parseDocument } from "./parse.ts";
 import {
+  createContextListQuery,
+  createContextTasksQuery,
   createProjectListQuery,
   createProjectTasksQuery,
-} from "./project.ts";
+} from "./query.ts";
 import { toTodoRecord } from "./record.ts";
+import type { ContextListQuery, ContextTasksQuery } from "./context.ts";
 import type { ProjectListQuery, ProjectTasksQuery } from "./project.ts";
 import type { TodoFileHooks, TodoItem, TodoRecord } from "./types.ts";
 
@@ -17,6 +20,10 @@ export interface TodoTxtClient {
   projects: () => ProjectListQuery;
   /** Query the items tagged with a single project name. */
   project: (name: string) => ProjectTasksQuery;
+  /** List unique context names, alphabetically sorted. */
+  contexts: () => ContextListQuery;
+  /** Query the items tagged with a single context name. */
+  context: (name: string) => ContextTasksQuery;
 }
 
 /**
@@ -42,6 +49,12 @@ export function createTodoTxt(hooks: TodoFileHooks): TodoTxtClient {
     },
     project(name) {
       return createProjectTasksQuery(read, name);
+    },
+    contexts() {
+      return createContextListQuery(read);
+    },
+    context(name) {
+      return createContextTasksQuery(read, name);
     },
   };
 }

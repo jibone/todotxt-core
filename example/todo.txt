@@ -1,8 +1,19 @@
 (A) Thank Mom for the meatballs @phone
 (B) Schedule Goodwill pickup +GarageSale @phone
-Post signs around the neighborhood +GarageSale
-2011-03-02 Document +TodoTxt task format due:2011-03-05
+Post signs around the neighborhood +GarageSale @errands
+2011-03-02 Document +TodoTxt task format due:2011-03-05 @computer
 x 2011-03-03 2011-03-01 Review Tim's pull request +TodoTxtTouch @github
 Learn how to add 2+2
 Email SoAndSo at soandso@example.com
-x 2011-03-04 Update README +TodoTxt
+x 2011-03-04 Update README +TodoTxt @computer
+x 2011-03-05 Replace furnace filter @phone @archive
+(A) Buy paint +GarageSale @errands @hardware
+x 2011-03-06 2011-03-01 Order moving boxes +Moving @errands
+(C) Pack kitchen +Moving @home
+x 2011-03-07 Clean garage +GarageSale @home
+2024-01-10 Write parser tests +TodoTxt +OpenSource @computer
+x 2024-01-12 Publish v0.1 +TodoTxt +OpenSource @computer
+(B) Review PR +OpenSource @github
+x 2024-01-15 Merge PR +OpenSource @github @archive
+(A) Plant tomatoes +Garden @home
+(B) Weed the flower bed +Garden @home @hardware
