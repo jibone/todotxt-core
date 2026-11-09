@@ -1,5 +1,5 @@
 import { createTodoTxt } from "../index.ts";
-import type { TodoRecord } from "../index.ts";
+import { printNames, printRecords, section } from "./print.ts";
 
 const todoFile = new URL("./todo.txt", import.meta.url);
 
@@ -10,31 +10,37 @@ const todos = createTodoTxt({
   write: (contents) => Bun.write(todoFile, contents),
 });
 
+section("All projects");
+printNames(await todos.projects());
+
+section("Pending projects");
+printNames(await todos.pending().projects());
+
+section("Completed projects");
+printNames(await todos.completed().projects());
+
 const project = "TodoTxt";
 
-console.log("All projects:", (await todos.projects()).join(", "));
-console.log("Pending projects:", (await todos.projects().pending()).join(", "));
-console.log(
-  "Completed projects:",
-  (await todos.projects().completed()).join(", "),
-);
-
-console.log(`\nAll +${project} items:`);
+section(`All +${project} records`);
 printRecords(await todos.project(project));
 
-console.log(`\nPending +${project} items:`);
+section(`Pending +${project} records`);
 printRecords(await todos.project(project).pending());
 
-console.log(`\nCompleted +${project} items:`);
+section(`Completed +${project} records`);
 printRecords(await todos.project(project).completed());
 
-function printRecords(records: TodoRecord[]): void {
-  if (records.length === 0) {
-    console.log("  (none)");
-    return;
-  }
+section(`Contexts used by +${project}`);
+printNames(await todos.project(project).contexts());
 
-  for (const record of records) {
-    console.log(`  ${record.completed ? "x" : " "} ${record.description}`);
-  }
-}
+section(`Contexts used by pending +${project} records`);
+printNames(await todos.project(project).pending().contexts());
+
+section(`Contexts used by completed +${project} records`);
+printNames(await todos.project(project).completed().contexts());
+
+section("Project filters intersect");
+printRecords(await todos.project("TodoTxt").project("OpenSource"));
+
+section("Project filters combine with context filters");
+printRecords(await todos.project("TodoTxt").context("computer"));

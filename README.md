@@ -2,8 +2,13 @@
 
 A parser for the [todo.txt format](https://github.com/todotxt/todo.txt).
 
-The library performs no IO. You provide callbacks for reading and writing the
-file, so it works with Bun, Node, a database, or anything else.
+Every non-empty line is parsed directly into a JSON-friendly `TodoRecord`. The
+library performs no IO. You provide callbacks for reading and writing the file,
+so it works with Bun, Node, a database, or anything else.
+
+> [!WARNING]
+> This library is under active development and is not yet recommended for
+> production use. Its API may change without notice.
 
 ## Usage
 
@@ -15,34 +20,6 @@ const todos = createTodoTxt({
   write: (contents) => Bun.write("todo.txt", contents),
 });
 
-const items = await todos.read();
-
-for (const item of items) {
-  console.log(item.completed, item.priority, item.text);
-  console.log(item.projects, item.contexts, item.extensions);
-}
-```
-
-`read()` returns a `TodoItem` for each non-empty line:
-
-| Field            | Description                                                    |
-| ---------------- | -------------------------------------------------------------- |
-| `raw`            | The original line, without its line ending                     |
-| `completed`      | `true` when the line starts with `x `                          |
-| `priority`       | Uppercase letter from `(A)`–`(Z)`, or `null`                   |
-| `completionDate` | `YYYY-MM-DD` completion date, or `null`                        |
-| `creationDate`   | `YYYY-MM-DD` creation date, or `null`                          |
-| `text`           | Task text after the `x`, priority, and date prefixes           |
-| `projects`       | Projects without the `+` prefix                                |
-| `contexts`       | Contexts without the `@` prefix                                |
-| `extensions`     | `key:value` metadata (`{ due: "2011-03-05" }`)                 |
-
-### Normalized records
-
-`all()` returns a `TodoRecord` for each non-empty line, with inline metadata
-separated out of the description:
-
-```ts
 const records = await todos.all();
 
 for (const todo of records) {
@@ -50,6 +27,8 @@ for (const todo of records) {
   console.log(todo.projects, todo.contexts, todo.data);
 }
 ```
+
+`all()` returns a `TodoRecord` for each non-empty line:
 
 | Field         | Description                                                     |
 | ------------- | --------------------------------------------------------------- |
@@ -62,101 +41,115 @@ for (const todo of records) {
 | `contexts`    | Contexts without the `@` prefix                                 |
 | `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                  |
 
-### Projects
+## Querying
 
-Project queries are lazy: chaining filters does no IO, and awaiting a query
-reads the file once.
+Queries are lazy: chaining filters does no IO. The first query on a client reads
+and parses the file once, then later queries reuse that in-memory snapshot.
+Every filter operates on the array of parsed JSON records.
 
 ```ts
-// Unique project names, alphabetically sorted.
+await todos.all();                 // TodoRecord[] (always reloads)
+await todos.pending();             // TodoRecord[]
+await todos.completed();           // TodoRecord[]
+await todos.project("TodoTxt");    // TodoRecord[]
+await todos.context("phone");      // TodoRecord[]
+```
+
+Filters compose, so they can be combined in any order:
+
+```ts
+await todos.project("TodoTxt").pending();
+await todos.project("TodoTxt").context("computer");
+await todos.pending().project("OpenSource").context("github");
+```
+
+### Caching and refresh
+
+A client caches its parsed records in memory. The first query reads and parses
+the file; later queries reuse the same snapshot, even if they use different
+filters.
+
+```ts
+const projects = await todos.projects(); // reads and caches once
+
+for (const project of projects) {
+  const done = await todos.project(project).completed(); // cached
+  const pending = await todos.project(project).pending(); // cached
+}
+```
+
+`all()` always performs a fresh read and replaces the cache:
+
+```ts
+await todos.pending(); // may load the cache
+await todos.all();     // always reloads
+await todos.pending(); // uses the refreshed cache
+```
+
+There is no TTL or background refresh. If the file changes outside the client,
+call `await todos.all()` before querying again. Returned records are independent
+copies, so mutating them does not affect later queries.
+
+### Projects and contexts
+
+`projects()` and `contexts()` are terminal plucks. They return unique names,
+alphabetically sorted.
+
+```ts
 await todos.projects();
 // ["GarageSale", "Garden", "Moving", "OpenSource", "TodoTxt", "TodoTxtTouch"]
 
-// Projects with at least one unfinished item.
-await todos.projects().pending();
-
-// Projects whose items are all completed.
-await todos.projects().completed();
-
-// Every record in a project, pending and completed, in file order.
-await todos.project("TodoTxt");
-
-// Only pending or only completed records in a project.
-await todos.project("TodoTxt").pending();
-await todos.project("TodoTxt").completed();
-```
-
-A project that contains both pending and completed items is listed by
-`pending()` and not by `completed()`. Project names are matched exactly and
-case-sensitively; an unknown name resolves to an empty array.
-
-### Contexts
-
-Context queries work the same way as project queries:
-
-```ts
-// Unique context names, alphabetically sorted.
 await todos.contexts();
 // ["archive", "computer", "errands", "github", "hardware", "home", "phone"]
 
-// Contexts with at least one unfinished item.
-await todos.contexts().pending();
-
-// Contexts whose items are all completed.
-await todos.contexts().completed();
-
-// Every record in a context, pending and completed, in file order.
-await todos.context("phone");
-
-// Only pending or only completed records in a context.
-await todos.context("phone").pending();
-await todos.context("phone").completed();
+// Names from pending or completed records.
+await todos.pending().projects();
+await todos.completed().projects();
+await todos.pending().contexts();
+await todos.completed().contexts();
 ```
 
-A context that contains both pending and completed items is listed by
-`pending()` and not by `completed()`. Context names are matched exactly and
-case-sensitively; an unknown name resolves to an empty array.
-
-### Cross-filtering projects and contexts
-
-Task queries can switch to the other dimension. These queries stay lazy and
-are scoped to the current project or context:
+Plucks can follow any filter chain:
 
 ```ts
 // Contexts used by items in a project.
-await todos.project("GarageSale").contexts(); // ["errands", "hardware", "home", "phone"]
-await todos.project("GarageSale").contexts().pending(); // ["errands", "hardware", "phone"]
-await todos.project("GarageSale").contexts().completed(); // ["home"]
+await todos.project("GarageSale").contexts();
+await todos.project("GarageSale").pending().contexts();
+await todos.project("GarageSale").completed().contexts();
 
 // Projects used by items in a context.
-await todos.context("home").projects(); // ["GarageSale", "Garden", "Moving"]
-await todos.context("home").projects().pending(); // ["Garden", "Moving"]
-await todos.context("home").projects().completed(); // ["GarageSale"]
-
-// Records that are in a project and carry a context.
-await todos.project("TodoTxt").context("computer");
-await todos.project("TodoTxt").context("computer").pending();
-await todos.project("TodoTxt").context("computer").completed();
+await todos.context("home").projects();
+await todos.context("home").pending().projects();
+await todos.context("home").completed().projects();
 ```
 
-Name lists are scoped to the current project or context. `pending()` keeps
-names with at least one pending item in that scope, while `completed()` keeps
-names whose items in that scope are all completed. A name with a mix of both is
-therefore listed by `pending()` only.
+Names are matched exactly and case-sensitively. An unknown project or context
+resolves to an empty array.
 
-Status carries across views, so `project("p").pending().contexts()` is the same
-as `project("p").contexts().pending()`. The most recent `pending()` or
-`completed()` call wins. The combined `project("p").context("c")` query returns
-records carrying both tags, pending and completed, in file order.
+### Status semantics
+
+Filters are applied in sequence:
+
+- `pending()` keeps records that are not completed.
+- `completed()` keeps records that are completed.
+- `pending().completed()` therefore resolves to `[]`.
+- `completed().projects()` returns projects that appear on at least one
+  completed record. A project with both pending and completed items appears in
+  both `pending().projects()` and `completed().projects()`.
+
+## Parser
 
 The parser also works without the client wrapper:
 
 ```ts
 import { parseDocument, parseLine } from "todotxt-core";
 
-const item = parseLine("(A) Call Mom +Family @phone");
-const items = parseDocument(contents);
+const record = parseLine("(A) Call Mom +Family @phone due:2011-03-05");
+const records = parseDocument(contents);
 ```
+
+`parseLine` returns a `TodoRecord` directly. The original raw line is not
+retained.
 
 Writing is not implemented yet.
 

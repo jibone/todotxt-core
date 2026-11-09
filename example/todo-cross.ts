@@ -1,5 +1,5 @@
 import { createTodoTxt } from "../index.ts";
-import type { TodoRecord } from "../index.ts";
+import { printNames, printRecords, section } from "./print.ts";
 
 const todoFile = new URL("./todo.txt", import.meta.url);
 
@@ -10,52 +10,38 @@ const todos = createTodoTxt({
   write: (contents) => Bun.write(todoFile, contents),
 });
 
-console.log("Contexts in +GarageSale:");
+section("Contexts in +GarageSale");
 printNames(await todos.project("GarageSale").contexts());
 
-console.log("\nPending contexts in +GarageSale:");
-printNames(await todos.project("GarageSale").contexts().pending());
+section("Pending contexts in +GarageSale");
+printNames(await todos.project("GarageSale").pending().contexts());
 
-console.log("\nCompleted contexts in +GarageSale:");
-printNames(await todos.project("GarageSale").contexts().completed());
+section("Completed contexts in +GarageSale");
+printNames(await todos.project("GarageSale").completed().contexts());
 
-console.log("\nProjects in @home:");
+section("Projects in @home");
 printNames(await todos.context("home").projects());
 
-console.log("\nPending projects in @home:");
-printNames(await todos.context("home").projects().pending());
+section("Pending projects in @home");
+printNames(await todos.context("home").pending().projects());
 
-console.log("\nCompleted projects in @home:");
-printNames(await todos.context("home").projects().completed());
+section("Completed projects in @home");
+printNames(await todos.context("home").completed().projects());
 
-console.log("\nAll +TodoTxt @computer items:");
+section("All +TodoTxt @computer records");
 printRecords(await todos.project("TodoTxt").context("computer"));
 
-console.log("\nPending +TodoTxt @computer items:");
+section("Pending +TodoTxt @computer records");
 printRecords(await todos.project("TodoTxt").context("computer").pending());
 
-console.log("\nCompleted +TodoTxt @computer items:");
+section("Completed +TodoTxt @computer records");
 printRecords(await todos.project("TodoTxt").context("computer").completed());
 
-console.log("\nAll +GarageSale @home items:");
+section("All +GarageSale @home records");
 printRecords(await todos.project("GarageSale").context("home"));
 
-function printNames(names: string[]): void {
-  if (names.length === 0) {
-    console.log("  (none)");
-    return;
-  }
+section("Narrowing works in either order");
+printRecords(await todos.context("home").project("GarageSale"));
 
-  console.log(`  ${names.join(", ")}`);
-}
-
-function printRecords(records: TodoRecord[]): void {
-  if (records.length === 0) {
-    console.log("  (none)");
-    return;
-  }
-
-  for (const record of records) {
-    console.log(`  ${record.completed ? "x" : " "} ${record.description}`);
-  }
-}
+section("Three filters compose");
+printRecords(await todos.pending().project("OpenSource").context("github"));

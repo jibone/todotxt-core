@@ -35,8 +35,234 @@ function descriptions(records: { description: string }[]): string[] {
   return records.map((record) => record.description);
 }
 
-describe("project().contexts()", () => {
-  test("lists only contexts used by items in the project", async () => {
+describe("all and record filters", () => {
+  test("all() returns every parsed record", async () => {
+    const todos = createClient();
+
+    expect(await todos.all()).toHaveLength(19);
+    expect((await todos.all())[0]?.description).toBe(
+      "Thank Mom for the meatballs",
+    );
+  });
+
+  test("pending() and completed() partition the records", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending()).toHaveLength(12);
+    expect(await todos.completed()).toHaveLength(7);
+  });
+
+  test("status filters compose sequentially", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().completed()).toEqual([]);
+    expect(await todos.completed().pending()).toEqual([]);
+  });
+});
+
+describe("project filters", () => {
+  test("lists every record in a project in file order", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.project("TodoTxt"))).toEqual([
+      "Document task format",
+      "Update README",
+      "Write parser tests",
+      "Publish v0.1",
+    ]);
+  });
+
+  test("lists only pending records in a project", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.project("TodoTxt").pending())).toEqual([
+      "Document task format",
+      "Write parser tests",
+    ]);
+  });
+
+  test("lists only completed records in a project", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.project("TodoTxt").completed())).toEqual([
+      "Update README",
+      "Publish v0.1",
+    ]);
+  });
+
+  test("returns an empty list for an unknown project", async () => {
+    const todos = createClient();
+
+    expect(await todos.project("Missing")).toEqual([]);
+    expect(await todos.project("Missing").pending()).toEqual([]);
+    expect(await todos.project("Missing").completed()).toEqual([]);
+  });
+
+  test("matches project names case-sensitively", async () => {
+    const todos = createClient();
+
+    expect(await todos.project("todotxt")).toEqual([]);
+  });
+
+  test("lists an item tagged with several projects under each", async () => {
+    const todos = createClient("(A) Shared task +Alpha +Beta");
+
+    expect((await todos.project("Alpha"))[0]?.description).toBe("Shared task");
+    expect((await todos.project("Beta"))[0]?.description).toBe("Shared task");
+  });
+
+  test("does not duplicate an item tagged with the same project twice", async () => {
+    const todos = createClient("(A) Shared task +Alpha +Alpha");
+
+    expect(await todos.project("Alpha")).toHaveLength(1);
+  });
+
+  test("project filters intersect", async () => {
+    const todos = createClient();
+
+    expect(
+      descriptions(await todos.project("TodoTxt").project("OpenSource")),
+    ).toEqual(["Write parser tests", "Publish v0.1"]);
+  });
+});
+
+describe("context filters", () => {
+  test("lists every record in a context in file order", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.context("home"))).toEqual([
+      "Pack kitchen",
+      "Clean garage",
+      "Plant tomatoes",
+      "Weed the flower bed",
+    ]);
+  });
+
+  test("lists only pending records in a context", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.context("home").pending())).toEqual([
+      "Pack kitchen",
+      "Plant tomatoes",
+      "Weed the flower bed",
+    ]);
+  });
+
+  test("lists only completed records in a context", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.context("home").completed())).toEqual([
+      "Clean garage",
+    ]);
+  });
+
+  test("returns an empty list for an unknown context", async () => {
+    const todos = createClient();
+
+    expect(await todos.context("Missing")).toEqual([]);
+    expect(await todos.context("Missing").pending()).toEqual([]);
+    expect(await todos.context("Missing").completed()).toEqual([]);
+  });
+
+  test("matches context names case-sensitively", async () => {
+    const todos = createClient();
+
+    expect(await todos.context("Computer")).toEqual([]);
+  });
+
+  test("lists an item tagged with several contexts under each", async () => {
+    const todos = createClient("(A) Shared task @home @office");
+
+    expect((await todos.context("home"))[0]?.description).toBe("Shared task");
+    expect((await todos.context("office"))[0]?.description).toBe("Shared task");
+  });
+
+  test("does not duplicate an item tagged with the same context twice", async () => {
+    const todos = createClient("(A) Shared task @home @home");
+
+    expect(await todos.context("home")).toHaveLength(1);
+  });
+});
+
+describe("name plucks", () => {
+  test("lists every unique project alphabetically", async () => {
+    const todos = createClient();
+
+    expect(await todos.projects()).toEqual([
+      "GarageSale",
+      "Garden",
+      "Moving",
+      "OpenSource",
+      "TodoTxt",
+      "TodoTxtTouch",
+    ]);
+  });
+
+  test("lists every unique context alphabetically", async () => {
+    const todos = createClient();
+
+    expect(await todos.contexts()).toEqual([
+      "archive",
+      "computer",
+      "errands",
+      "github",
+      "hardware",
+      "home",
+      "phone",
+    ]);
+  });
+
+  test("plucks projects from pending records", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().projects()).toEqual([
+      "GarageSale",
+      "Garden",
+      "Moving",
+      "OpenSource",
+      "TodoTxt",
+    ]);
+  });
+
+  test("plucks projects from completed records", async () => {
+    const todos = createClient();
+
+    expect(await todos.completed().projects()).toEqual([
+      "GarageSale",
+      "Moving",
+      "OpenSource",
+      "TodoTxt",
+      "TodoTxtTouch",
+    ]);
+  });
+
+  test("plucks contexts from pending records", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().contexts()).toEqual([
+      "computer",
+      "errands",
+      "github",
+      "hardware",
+      "home",
+      "phone",
+    ]);
+  });
+
+  test("plucks contexts from completed records", async () => {
+    const todos = createClient();
+
+    expect(await todos.completed().contexts()).toEqual([
+      "archive",
+      "computer",
+      "errands",
+      "github",
+      "home",
+      "phone",
+    ]);
+  });
+
+  test("lists contexts used by items in a project", async () => {
     const todos = createClient();
 
     expect(await todos.project("GarageSale").contexts()).toEqual([
@@ -47,65 +273,25 @@ describe("project().contexts()", () => {
     ]);
   });
 
-  test("lists contexts that have at least one pending item in the project", async () => {
+  test("lists contexts used by pending items in a project", async () => {
     const todos = createClient();
 
-    expect(await todos.project("GarageSale").contexts().pending()).toEqual([
+    expect(await todos.project("GarageSale").pending().contexts()).toEqual([
       "errands",
       "hardware",
       "phone",
     ]);
   });
 
-  test("lists contexts whose items in the project are all completed", async () => {
+  test("lists contexts used by completed items in a project", async () => {
     const todos = createClient();
 
-    expect(await todos.project("GarageSale").contexts().completed()).toEqual([
+    expect(await todos.project("GarageSale").completed().contexts()).toEqual([
       "home",
     ]);
   });
 
-  test("does not include contexts from other projects", async () => {
-    const todos = createClient();
-
-    expect(await todos.project("GarageSale").contexts()).not.toContain(
-      "computer",
-    );
-    expect(await todos.project("TodoTxt").contexts()).toEqual(["computer"]);
-  });
-
-  test("returns empty lists for an unknown project", async () => {
-    const todos = createClient();
-
-    expect(await todos.project("Missing").contexts()).toEqual([]);
-    expect(await todos.project("Missing").contexts().pending()).toEqual([]);
-    expect(await todos.project("Missing").contexts().completed()).toEqual([]);
-  });
-
-  test("does not duplicate a context tagged twice on one item", async () => {
-    const todos = createClient("(A) Shared task +Alpha @home @home");
-
-    expect(await todos.project("Alpha").contexts()).toEqual(["home"]);
-  });
-
-  test("reads through the hook once per awaited query", async () => {
-    let readCalls = 0;
-    const todos = createTodoTxt({
-      read: () => {
-        readCalls += 1;
-        return CONTENTS;
-      },
-      write: () => {},
-    });
-
-    await todos.project("GarageSale").contexts().pending();
-
-    expect(readCalls).toBe(1);
-  });
-});
-
-describe("context().projects()", () => {
-  test("lists only projects used by items in the context", async () => {
+  test("lists projects used by items in a context", async () => {
     const todos = createClient();
 
     expect(await todos.context("home").projects()).toEqual([
@@ -115,62 +301,48 @@ describe("context().projects()", () => {
     ]);
   });
 
-  test("lists projects that have at least one pending item in the context", async () => {
+  test("lists projects used by pending items in a context", async () => {
     const todos = createClient();
 
-    expect(await todos.context("home").projects().pending()).toEqual([
+    expect(await todos.context("home").pending().projects()).toEqual([
       "Garden",
       "Moving",
     ]);
   });
 
-  test("lists projects whose items in the context are all completed", async () => {
+  test("lists projects used by completed items in a context", async () => {
     const todos = createClient();
 
-    expect(await todos.context("home").projects().completed()).toEqual([
+    expect(await todos.context("home").completed().projects()).toEqual([
       "GarageSale",
     ]);
   });
 
-  test("does not include projects from other contexts", async () => {
+  test("returns empty name lists for unknown projects and contexts", async () => {
     const todos = createClient();
 
-    expect(await todos.context("home").projects()).not.toContain("TodoTxt");
-    expect(await todos.context("archive").projects()).toEqual(["OpenSource"]);
-  });
-
-  test("returns empty lists for an unknown context", async () => {
-    const todos = createClient();
-
+    expect(await todos.project("Missing").contexts()).toEqual([]);
     expect(await todos.context("Missing").projects()).toEqual([]);
-    expect(await todos.context("Missing").projects().pending()).toEqual([]);
-    expect(await todos.context("Missing").projects().completed()).toEqual([]);
   });
 
-  test("does not duplicate a project tagged twice on one item", async () => {
-    const todos = createClient("(A) Shared task @home +Alpha +Alpha");
+  test("deduplicates names tagged twice on one item", async () => {
+    const todos = createClient("(A) Shared task +Alpha +Alpha @home @home");
 
+    expect(await todos.projects()).toEqual(["Alpha"]);
+    expect(await todos.contexts()).toEqual(["home"]);
+    expect(await todos.project("Alpha").contexts()).toEqual(["home"]);
     expect(await todos.context("home").projects()).toEqual(["Alpha"]);
   });
 
-  test("reads through the hook once per awaited query", async () => {
-    let readCalls = 0;
-    const todos = createTodoTxt({
-      read: () => {
-        readCalls += 1;
-        return CONTENTS;
-      },
-      write: () => {},
-    });
+  test("completed plucks include projects with mixed item states", async () => {
+    const todos = createClient();
 
-    await todos.context("home").projects().completed();
-
-    expect(readCalls).toBe(1);
+    expect(await todos.completed().projects()).toContain("TodoTxt");
   });
 });
 
-describe("project().context()", () => {
-  test("lists every item with both tags, done and pending, in file order", async () => {
+describe("combined filters", () => {
+  test("lists every record with both tags in file order", async () => {
     const todos = createClient();
     const records = await todos.project("TodoTxt").context("computer");
 
@@ -188,37 +360,22 @@ describe("project().context()", () => {
     ]);
   });
 
-  test("lists only pending items", async () => {
+  test("lists only pending records with both tags", async () => {
     const todos = createClient();
-    const records = await todos.project("TodoTxt").context("computer").pending();
 
-    expect(descriptions(records)).toEqual([
-      "Document task format",
-      "Write parser tests",
-    ]);
-    expect(records.every((record) => !record.completed)).toBe(true);
+    expect(
+      descriptions(await todos.project("TodoTxt").context("computer").pending()),
+    ).toEqual(["Document task format", "Write parser tests"]);
   });
 
-  test("lists only completed items", async () => {
-    const todos = createClient();
-    const records = await todos.project("TodoTxt").context("computer").completed();
-
-    expect(descriptions(records)).toEqual(["Update README", "Publish v0.1"]);
-    expect(records.every((record) => record.completed)).toBe(true);
-  });
-
-  test("returns both statuses when a project-context pair has only completed items", async () => {
+  test("lists only completed records with both tags", async () => {
     const todos = createClient();
 
     expect(
-      descriptions(await todos.project("GarageSale").context("home")),
-    ).toEqual(["Clean garage"]);
-    expect(
-      await todos.project("GarageSale").context("home").pending(),
-    ).toEqual([]);
-    expect(
-      descriptions(await todos.project("GarageSale").context("home").completed()),
-    ).toEqual(["Clean garage"]);
+      descriptions(
+        await todos.project("TodoTxt").context("computer").completed(),
+      ),
+    ).toEqual(["Update README", "Publish v0.1"]);
   });
 
   test("supports narrowing in either order", async () => {
@@ -227,20 +384,6 @@ describe("project().context()", () => {
     expect(
       descriptions(await todos.context("home").project("GarageSale")),
     ).toEqual(descriptions(await todos.project("GarageSale").context("home")));
-  });
-
-  test("the last status call wins", async () => {
-    const todos = createClient();
-
-    expect(
-      descriptions(
-        await todos
-          .project("TodoTxt")
-          .context("computer")
-          .pending()
-          .completed(),
-      ),
-    ).toEqual(["Update README", "Publish v0.1"]);
   });
 
   test("returns an empty list when either name is unknown", async () => {
@@ -255,8 +398,10 @@ describe("project().context()", () => {
 
     expect(await todos.project("TodoTxt").context("phone")).toEqual([]);
   });
+});
 
-  test("reads through the hook once per awaited query", async () => {
+describe("lazy reads", () => {
+  test("chaining filters does no IO until awaited", async () => {
     let readCalls = 0;
     const todos = createTodoTxt({
       read: () => {
@@ -266,56 +411,48 @@ describe("project().context()", () => {
       write: () => {},
     });
 
-    await todos.project("TodoTxt").context("computer").pending();
+    const query = todos.pending().project("TodoTxt").context("computer");
+
+    expect(readCalls).toBe(0);
+
+    await query;
+
+    expect(readCalls).toBe(1);
+  });
+
+  test("reads once per awaited record query", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    await todos.project("GarageSale").pending();
+
+    expect(readCalls).toBe(1);
+  });
+
+  test("reads once per awaited name pluck", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    await todos.pending().projects();
 
     expect(readCalls).toBe(1);
   });
 });
 
-describe("status carry-over between views", () => {
-  test("project pending status carries into contexts", async () => {
-    const todos = createClient();
-
-    expect(
-      await todos.project("GarageSale").pending().contexts(),
-    ).toEqual(await todos.project("GarageSale").contexts().pending());
-  });
-
-  test("project completed status carries into contexts", async () => {
-    const todos = createClient();
-
-    expect(
-      await todos.project("GarageSale").completed().contexts(),
-    ).toEqual(await todos.project("GarageSale").contexts().completed());
-  });
-
-  test("context pending status carries into projects", async () => {
-    const todos = createClient();
-
-    expect(
-      await todos.context("home").pending().projects(),
-    ).toEqual(await todos.context("home").projects().pending());
-  });
-
-  test("context completed status carries into projects", async () => {
-    const todos = createClient();
-
-    expect(
-      await todos.context("home").completed().projects(),
-    ).toEqual(await todos.context("home").projects().completed());
-  });
-
-  test("the last status call wins on a name list", async () => {
-    const todos = createClient();
-
-    expect(
-      await todos.project("GarageSale").contexts().pending().completed(),
-    ).toEqual(["home"]);
-  });
-});
-
-describe("cross queries with asynchronous hooks", () => {
-  test("supports async read hooks", async () => {
+describe("asynchronous hooks", () => {
+  test("supports async read hooks across the chain", async () => {
     const todos = createTodoTxt({
       read: async () => {
         await Promise.resolve();
@@ -328,11 +465,13 @@ describe("cross queries with asynchronous hooks", () => {
       write: async () => {},
     });
 
+    expect(await todos.all()).toHaveLength(3);
+    expect(await todos.pending().projects()).toEqual(["Alpha"]);
     expect(await todos.project("Alpha").contexts()).toEqual(["home", "office"]);
-    expect(await todos.project("Alpha").contexts().completed()).toEqual([
+    expect(await todos.project("Alpha").completed().contexts()).toEqual([
       "home",
     ]);
-    expect(await todos.context("home").projects().completed()).toEqual([
+    expect(await todos.context("home").completed().projects()).toEqual([
       "Alpha",
       "Beta",
     ]);
