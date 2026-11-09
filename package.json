@@ -1,11 +1,56 @@
 {
-  "name": "todotxt-core",
-  "module": "index.ts",
-  "type": "module",
-  "devDependencies": {
-    "@types/bun": "latest"
+  "name": "@jibone/todotxt-core",
+  "version": "0.1.0",
+  "description": "Parse and query todo.txt files with runtime-agnostic file hooks.",
+  "license": "MIT",
+  "author": "J Shamsul Bahri",
+  "homepage": "https://github.com/jibone/todotxt-core#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jibone/todotxt-core.git"
   },
-  "peerDependencies": {
+  "bugs": {
+    "url": "https://github.com/jibone/todotxt-core/issues"
+  },
+  "keywords": [
+    "todo.txt",
+    "todotxt",
+    "todo",
+    "parser",
+    "typescript"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun test && bunx tsc"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsdown": "^0.23.7",
     "typescript": "^7"
   }
 }
