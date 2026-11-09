@@ -33,3 +33,12 @@ jobs:
 
       - name: Test
         run: bun test
+
+      - name: Build
+        run: bun run build
+
+      - name: Validate package
+        run: bunx publint
+
+      - name: Check published types
+        run: bunx @arethetypeswrong/cli --pack . --profile esm-only

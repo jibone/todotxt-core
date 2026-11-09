@@ -105,6 +105,15 @@ describe("createTodoTxt", () => {
     expect(writeCalls).toBe(0);
   });
 
+  test("allows read-only clients without a write hook", async () => {
+    const todos = createTodoTxt({
+      read: () => "Call Mom",
+    });
+
+    expect(await todos.all()).toHaveLength(1);
+    expect(await todos.pending()).toHaveLength(1);
+  });
+
   test("propagates errors from the read hook", async () => {
     const todos = createTodoTxt({
       read: () => {

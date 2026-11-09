@@ -10,13 +10,14 @@ export type MaybePromise<T> = T | Promise<T>;
  * File access callbacks supplied by the consumer.
  *
  * The library itself never touches the filesystem. `read` is used by
- * {@link createTodoTxt}; `write` is part of the contract for the upcoming
- * write APIs. The write hook's return value is ignored, so it may return
- * anything (for example `Bun.write`'s `Promise<number>`).
+ * {@link createTodoTxt}. `write` is optional until the write APIs land; when
+ * they do, callers that mutate todos will need to provide it. The write hook's
+ * return value is ignored, so it may return anything (for example
+ * `Bun.write`'s `Promise<number>`).
  */
 export interface TodoFileHooks {
   read: () => MaybePromise<string>;
-  write: (contents: string) => MaybePromise<unknown>;
+  write?: (contents: string) => MaybePromise<unknown>;
 }
 
 /**

@@ -10,10 +10,23 @@ so it works with Bun, Node, a database, or anything else.
 > This library is under active development and is not yet recommended for
 > production use. Its API may change without notice.
 
+## Install
+
+```sh
+npm install @jibone/todotxt-core
+# or
+bun add @jibone/todotxt-core
+```
+
+The package has no runtime dependencies and uses no Node-specific APIs. It runs
+in Node 20+, Bun, Deno, and any other runtime that can provide the read/write
+hooks. Browser support is not officially targeted, but hooks can be backed by
+any storage you like.
+
 ## Usage
 
 ```ts
-import { createTodoTxt } from "todotxt-core";
+import { createTodoTxt } from "@jibone/todotxt-core";
 
 const todos = createTodoTxt({
   read: () => Bun.file("todo.txt").text(),
@@ -27,6 +40,21 @@ for (const todo of records) {
   console.log(todo.projects, todo.contexts, todo.data);
 }
 ```
+
+The same client in Node, using `node:fs/promises`:
+
+```ts
+import { readFile, writeFile } from "node:fs/promises";
+import { createTodoTxt } from "@jibone/todotxt-core";
+
+const todos = createTodoTxt({
+  read: () => readFile("todo.txt", "utf8"),
+  write: (contents) => writeFile("todo.txt", contents),
+});
+```
+
+`write` is optional until the write APIs are implemented, so read-only clients
+can omit it.
 
 `all()` returns a `TodoRecord` for each non-empty line:
 
@@ -142,7 +170,7 @@ Filters are applied in sequence:
 The parser also works without the client wrapper:
 
 ```ts
-import { parseDocument, parseLine } from "todotxt-core";
+import { parseDocument, parseLine } from "@jibone/todotxt-core";
 
 const record = parseLine("(A) Call Mom +Family @phone due:2011-03-05");
 const records = parseDocument(contents);
@@ -151,7 +179,8 @@ const records = parseDocument(contents);
 `parseLine` returns a `TodoRecord` directly. The original raw line is not
 retained.
 
-Writing is not implemented yet.
+Writing is not implemented yet. The `write` hook is optional for now and will
+become required for the write APIs when they land.
 
 ## Example
 
@@ -168,4 +197,5 @@ bun example/todo-cross.ts
 bun install
 bun test
 bunx tsc
+bun run build
 ```
