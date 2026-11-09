@@ -5,15 +5,14 @@ describe("parseLine", () => {
   describe("priorities", () => {
     test("parses an uppercase priority that appears first", () => {
       expect(parseLine("(A) Call Mom")).toEqual({
-        raw: "(A) Call Mom",
         completed: false,
         priority: "A",
-        completionDate: null,
-        creationDate: null,
-        text: "Call Mom",
+        completedAt: null,
+        createdAt: null,
+        description: "Call Mom",
         projects: [],
         contexts: [],
-        extensions: {},
+        data: {},
       });
     });
 
@@ -21,21 +20,21 @@ describe("parseLine", () => {
       const item = parseLine("(b) Get back to the boss");
 
       expect(item.priority).toBeNull();
-      expect(item.text).toBe("(b) Get back to the boss");
+      expect(item.description).toBe("(b) Get back to the boss");
     });
 
     test("requires a space after the priority", () => {
       const item = parseLine("(B)->Submit TPS report");
 
       expect(item.priority).toBeNull();
-      expect(item.text).toBe("(B)->Submit TPS report");
+      expect(item.description).toBe("(B)->Submit TPS report");
     });
 
     test("only recognizes a priority at the start of the line", () => {
       const item = parseLine("Really gotta call Mom (A) @phone @someday");
 
       expect(item.priority).toBeNull();
-      expect(item.text).toBe("Really gotta call Mom (A) @phone @someday");
+      expect(item.description).toBe("Really gotta call Mom (A)");
       expect(item.contexts).toEqual(["phone", "someday"]);
     });
 
@@ -52,9 +51,9 @@ describe("parseLine", () => {
       const item = parseLine("2011-03-02 Document +TodoTxt task format");
 
       expect(item.priority).toBeNull();
-      expect(item.creationDate).toBe("2011-03-02");
-      expect(item.completionDate).toBeNull();
-      expect(item.text).toBe("Document +TodoTxt task format");
+      expect(item.createdAt).toBe("2011-03-02");
+      expect(item.completedAt).toBeNull();
+      expect(item.description).toBe("Document task format");
       expect(item.projects).toEqual(["TodoTxt"]);
     });
 
@@ -62,45 +61,44 @@ describe("parseLine", () => {
       const item = parseLine("(A) 2011-03-02 Call Mom");
 
       expect(item.priority).toBe("A");
-      expect(item.creationDate).toBe("2011-03-02");
-      expect(item.text).toBe("Call Mom");
+      expect(item.createdAt).toBe("2011-03-02");
+      expect(item.description).toBe("Call Mom");
     });
 
     test("does not parse a date that is not at the front", () => {
       const item = parseLine("(A) Call Mom 2011-03-02");
 
-      expect(item.creationDate).toBeNull();
-      expect(item.text).toBe("Call Mom 2011-03-02");
+      expect(item.createdAt).toBeNull();
+      expect(item.description).toBe("Call Mom 2011-03-02");
     });
 
     test("requires the YYYY-MM-DD shape", () => {
       const item = parseLine("2011-3-2 Document the format");
 
-      expect(item.creationDate).toBeNull();
-      expect(item.text).toBe("2011-3-2 Document the format");
+      expect(item.createdAt).toBeNull();
+      expect(item.description).toBe("2011-3-2 Document the format");
     });
 
     test("accepts a date-only line", () => {
       const item = parseLine("(A) 2011-03-02");
 
       expect(item.priority).toBe("A");
-      expect(item.creationDate).toBe("2011-03-02");
-      expect(item.text).toBe("");
+      expect(item.createdAt).toBe("2011-03-02");
+      expect(item.description).toBe("");
     });
   });
 
   describe("completed tasks", () => {
     test("parses a completed task and its completion date", () => {
       expect(parseLine("x 2011-03-03 Call Mom")).toEqual({
-        raw: "x 2011-03-03 Call Mom",
         completed: true,
         priority: null,
-        completionDate: "2011-03-03",
-        creationDate: null,
-        text: "Call Mom",
+        completedAt: "2011-03-03",
+        createdAt: null,
+        description: "Call Mom",
         projects: [],
         contexts: [],
-        extensions: {},
+        data: {},
       });
     });
 
@@ -110,9 +108,9 @@ describe("parseLine", () => {
       );
 
       expect(item.completed).toBe(true);
-      expect(item.completionDate).toBe("2011-03-02");
-      expect(item.creationDate).toBe("2011-03-01");
-      expect(item.text).toBe("Review Tim's pull request +TodoTxtTouch @github");
+      expect(item.completedAt).toBe("2011-03-02");
+      expect(item.createdAt).toBe("2011-03-01");
+      expect(item.description).toBe("Review Tim's pull request");
       expect(item.projects).toEqual(["TodoTxtTouch"]);
       expect(item.contexts).toEqual(["github"]);
     });
@@ -121,23 +119,23 @@ describe("parseLine", () => {
       const item = parseLine("x Call Mom");
 
       expect(item.completed).toBe(true);
-      expect(item.completionDate).toBeNull();
-      expect(item.creationDate).toBeNull();
-      expect(item.text).toBe("Call Mom");
+      expect(item.completedAt).toBeNull();
+      expect(item.createdAt).toBeNull();
+      expect(item.description).toBe("Call Mom");
     });
 
     test("does not treat words beginning with x as completed", () => {
       const item = parseLine("xylophone lesson");
 
       expect(item.completed).toBe(false);
-      expect(item.text).toBe("xylophone lesson");
+      expect(item.description).toBe("xylophone lesson");
     });
 
     test("is case-sensitive about the x marker", () => {
       const item = parseLine("X 2012-01-01 Make resolutions");
 
       expect(item.completed).toBe(false);
-      expect(item.text).toBe("X 2012-01-01 Make resolutions");
+      expect(item.description).toBe("X 2012-01-01 Make resolutions");
     });
 
     test("treats x after a priority as text", () => {
@@ -145,7 +143,7 @@ describe("parseLine", () => {
 
       expect(item.completed).toBe(false);
       expect(item.priority).toBe("A");
-      expect(item.text).toBe("x Find ticket prices");
+      expect(item.description).toBe("x Find ticket prices");
     });
   });
 
@@ -155,6 +153,7 @@ describe("parseLine", () => {
         "(A) Call Mom +Family +PeaceLoveAndHappiness @iphone @phone",
       );
 
+      expect(item.description).toBe("Call Mom");
       expect(item.projects).toEqual(["Family", "PeaceLoveAndHappiness"]);
       expect(item.contexts).toEqual(["iphone", "phone"]);
     });
@@ -162,6 +161,7 @@ describe("parseLine", () => {
     test("parses a context at the start of the text", () => {
       const item = parseLine("@GroceryStore pies");
 
+      expect(item.description).toBe("pies");
       expect(item.contexts).toEqual(["GroceryStore"]);
     });
 
@@ -169,14 +169,14 @@ describe("parseLine", () => {
       const item = parseLine("Email SoAndSo at soandso@example.com");
 
       expect(item.contexts).toEqual([]);
-      expect(item.text).toBe("Email SoAndSo at soandso@example.com");
+      expect(item.description).toBe("Email SoAndSo at soandso@example.com");
     });
 
     test("does not treat arithmetic as a project", () => {
       const item = parseLine("Learn how to add 2+2");
 
       expect(item.projects).toEqual([]);
-      expect(item.text).toBe("Learn how to add 2+2");
+      expect(item.description).toBe("Learn how to add 2+2");
     });
 
     test("ignores bare + and @ tokens", () => {
@@ -184,6 +184,7 @@ describe("parseLine", () => {
 
       expect(item.projects).toEqual([]);
       expect(item.contexts).toEqual([]);
+      expect(item.description).toBe("Compare + and @ symbols");
     });
   });
 
@@ -191,66 +192,85 @@ describe("parseLine", () => {
     test("parses key:value metadata", () => {
       const item = parseLine("Pay rent due:2010-01-02 rec:1w");
 
-      expect(item.extensions).toEqual({
+      expect(item.data).toEqual({
         due: "2010-01-02",
         rec: "1w",
       });
-      expect(item.text).toBe("Pay rent due:2010-01-02 rec:1w");
+      expect(item.description).toBe("Pay rent");
     });
 
     test("uses the last value when a key is repeated", () => {
       const item = parseLine("Task due:2010-01-02 due:2010-02-02");
 
-      expect(item.extensions).toEqual({ due: "2010-02-02" });
+      expect(item.data).toEqual({ due: "2010-02-02" });
+      expect(item.description).toBe("Task");
     });
 
     test("does not parse a value containing another colon", () => {
       const item = parseLine("Task foo:bar:baz");
 
-      expect(item.extensions).toEqual({});
+      expect(item.data).toEqual({});
+      expect(item.description).toBe("Task foo:bar:baz");
     });
 
     test("does not parse dates as extensions", () => {
       const item = parseLine("2011-03-02 Document the format");
 
-      expect(item.extensions).toEqual({});
+      expect(item.data).toEqual({});
+      expect(item.createdAt).toBe("2011-03-02");
+      expect(item.description).toBe("Document the format");
     });
   });
 
-  describe("whitespace and raw content", () => {
-    test("preserves the raw line and trims surrounding whitespace from text", () => {
+  describe("description and whitespace", () => {
+    test("normalizes whitespace left behind by removed metadata", () => {
+      const item = parseLine("(A)   Call   Mom   +Family");
+
+      expect(item.priority).toBe("A");
+      expect(item.description).toBe("Call Mom");
+      expect(item.projects).toEqual(["Family"]);
+    });
+
+    test("does not parse a priority after leading whitespace", () => {
       const item = parseLine("  (A)   Call Mom   ");
 
-      expect(item.raw).toBe("  (A)   Call Mom   ");
       expect(item.priority).toBeNull();
-      expect(item.text).toBe("(A)   Call Mom");
+      expect(item.description).toBe("(A) Call Mom");
     });
 
     test("parses a priority with empty text", () => {
       const item = parseLine("(A) ");
 
       expect(item.priority).toBe("A");
-      expect(item.text).toBe("");
+      expect(item.description).toBe("");
     });
 
-    test("returns an empty item for an empty line", () => {
+    test("returns an empty record for an empty line", () => {
       expect(parseLine("")).toEqual({
-        raw: "",
         completed: false,
         priority: null,
-        completionDate: null,
-        creationDate: null,
-        text: "",
+        completedAt: null,
+        createdAt: null,
+        description: "",
         projects: [],
         contexts: [],
-        extensions: {},
+        data: {},
       });
+    });
+
+    test("allows an empty description when only metadata is present", () => {
+      const item = parseLine("+Family @phone due:2011-03-05");
+
+      expect(item.description).toBe("");
+      expect(item.projects).toEqual(["Family"]);
+      expect(item.contexts).toEqual(["phone"]);
+      expect(item.data).toEqual({ due: "2011-03-05" });
     });
   });
 });
 
 describe("parseDocument", () => {
-  test("parses every non-empty line", () => {
+  test("parses every non-empty line into a record", () => {
     const items = parseDocument(
       [
         "(A) Thank Mom for the meatballs @phone",
@@ -261,10 +281,10 @@ describe("parseDocument", () => {
 
     expect(items).toHaveLength(3);
     expect(items.map((item) => item.priority)).toEqual(["A", "B", null]);
-    expect(items.map((item) => item.text)).toEqual([
-      "Thank Mom for the meatballs @phone",
-      "Schedule Goodwill pickup +GarageSale @phone",
-      "Post signs around the neighborhood +GarageSale",
+    expect(items.map((item) => item.description)).toEqual([
+      "Thank Mom for the meatballs",
+      "Schedule Goodwill pickup",
+      "Post signs around the neighborhood",
     ]);
   });
 
@@ -272,7 +292,7 @@ describe("parseDocument", () => {
     const items = parseDocument("\n  \n(A) Call Mom\n\t\n");
 
     expect(items).toHaveLength(1);
-    expect(items[0]?.text).toBe("Call Mom");
+    expect(items[0]?.description).toBe("Call Mom");
   });
 
   test("handles CRLF line endings", () => {
@@ -280,15 +300,13 @@ describe("parseDocument", () => {
 
     expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({
-      raw: "(A) Call Mom",
       priority: "A",
-      text: "Call Mom",
+      description: "Call Mom",
     });
     expect(items[1]).toMatchObject({
-      raw: "x 2011-03-03 Done",
       completed: true,
-      completionDate: "2011-03-03",
-      text: "Done",
+      completedAt: "2011-03-03",
+      description: "Done",
     });
   });
 

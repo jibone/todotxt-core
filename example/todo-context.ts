@@ -1,5 +1,5 @@
 import { createTodoTxt } from "../index.ts";
-import type { TodoRecord } from "../index.ts";
+import { printNames, printRecords, section } from "./print.ts";
 
 const todoFile = new URL("./todo.txt", import.meta.url);
 
@@ -10,31 +10,37 @@ const todos = createTodoTxt({
   write: (contents) => Bun.write(todoFile, contents),
 });
 
+section("All contexts");
+printNames(await todos.contexts());
+
+section("Pending contexts");
+printNames(await todos.pending().contexts());
+
+section("Completed contexts");
+printNames(await todos.completed().contexts());
+
 const context = "phone";
 
-console.log("All contexts:", (await todos.contexts()).join(", "));
-console.log("Pending contexts:", (await todos.contexts().pending()).join(", "));
-console.log(
-  "Completed contexts:",
-  (await todos.contexts().completed()).join(", "),
-);
-
-console.log(`\nAll @${context} items:`);
+section(`All @${context} records`);
 printRecords(await todos.context(context));
 
-console.log(`\nPending @${context} items:`);
+section(`Pending @${context} records`);
 printRecords(await todos.context(context).pending());
 
-console.log(`\nCompleted @${context} items:`);
+section(`Completed @${context} records`);
 printRecords(await todos.context(context).completed());
 
-function printRecords(records: TodoRecord[]): void {
-  if (records.length === 0) {
-    console.log("  (none)");
-    return;
-  }
+section(`Projects used by @${context}`);
+printNames(await todos.context(context).projects());
 
-  for (const record of records) {
-    console.log(`  ${record.completed ? "x" : " "} ${record.description}`);
-  }
-}
+section(`Projects used by pending @${context} records`);
+printNames(await todos.context(context).pending().projects());
+
+section(`Projects used by completed @${context} records`);
+printNames(await todos.context(context).completed().projects());
+
+section("Context filters intersect");
+printRecords(await todos.context("home").context("hardware"));
+
+section("Context filters combine with project filters");
+printRecords(await todos.context("home").project("Garden"));

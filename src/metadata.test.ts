@@ -21,11 +21,11 @@ describe("isMetadataToken", () => {
 });
 
 describe("parseMetadata", () => {
-  test("collects projects, contexts, and extensions", () => {
+  test("collects projects, contexts, and data", () => {
     expect(parseMetadata("Call +Family @phone due:2011-03-05")).toEqual({
       projects: ["Family"],
       contexts: ["phone"],
-      extensions: { due: "2011-03-05" },
+      data: { due: "2011-03-05" },
     });
   });
 
@@ -33,7 +33,7 @@ describe("parseMetadata", () => {
     expect(parseMetadata("Call Mom")).toEqual({
       projects: [],
       contexts: [],
-      extensions: {},
+      data: {},
     });
   });
 });

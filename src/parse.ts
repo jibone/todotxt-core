@@ -1,5 +1,5 @@
-import { parseMetadata } from "./metadata.ts";
-import type { TodoItem } from "./types.ts";
+import { parseText } from "./metadata.ts";
+import type { TodoRecord } from "./types.ts";
 
 const PRIORITY_PATTERN = /^\(([A-Z])\) /;
 const LEADING_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})(?: |$)/;
@@ -25,7 +25,7 @@ function takeLeadingDate(input: string): [date: string | null, rest: string] {
 }
 
 /**
- * Parse a single todo.txt line.
+ * Parse a single todo.txt line directly into a JSON-friendly {@link TodoRecord}.
  *
  * The parser follows the todo.txt format rules:
  *
@@ -36,18 +36,18 @@ function takeLeadingDate(input: string): [date: string | null, rest: string] {
  * - Projects, contexts, and `key:value` metadata may appear anywhere in the
  *   remaining text.
  */
-export function parseLine(line: string): TodoItem {
+export function parseLine(line: string): TodoRecord {
   let rest = line;
   let completed = false;
   let priority: string | null = null;
-  let completionDate: string | null = null;
-  let creationDate: string | null = null;
+  let completedAt: string | null = null;
+  let createdAt: string | null = null;
 
   if (rest.startsWith("x ")) {
     completed = true;
     rest = rest.slice(2);
-    [completionDate, rest] = takeLeadingDate(rest);
-    [creationDate, rest] = takeLeadingDate(rest);
+    [completedAt, rest] = takeLeadingDate(rest);
+    [createdAt, rest] = takeLeadingDate(rest);
   } else {
     const priorityMatch = PRIORITY_PATTERN.exec(rest);
     if (priorityMatch) {
@@ -55,20 +55,21 @@ export function parseLine(line: string): TodoItem {
       rest = rest.slice(priorityMatch[0]!.length);
     }
 
-    [creationDate, rest] = takeLeadingDate(rest);
+    [createdAt, rest] = takeLeadingDate(rest);
   }
 
   const text = rest.trim();
-  const metadata = parseMetadata(text);
+  const { description, projects, contexts, data } = parseText(text);
 
   return {
-    raw: line,
     completed,
     priority,
-    completionDate,
-    creationDate,
-    text,
-    ...metadata,
+    completedAt,
+    createdAt,
+    description,
+    projects,
+    contexts,
+    data,
   };
 }
 
@@ -76,11 +77,16 @@ export function parseLine(line: string): TodoItem {
  * Parse the contents of a todo.txt file.
  *
  * Lines are split on `\n` or `\r\n`; blank and whitespace-only lines are
- * skipped.
+ * skipped. Every remaining line becomes a {@link TodoRecord}.
  */
-export function parseDocument(contents: string): TodoItem[] {
-  return contents
-    .split(/\r?\n/)
-    .filter((line) => line.trim() !== "")
-    .map(parseLine);
+export function parseDocument(contents: string): TodoRecord[] {
+  const records: TodoRecord[] = [];
+
+  for (const line of contents.split(/\r?\n/)) {
+    if (line.trim() !== "") {
+      records.push(parseLine(line));
+    }
+  }
+
+  return records;
 }

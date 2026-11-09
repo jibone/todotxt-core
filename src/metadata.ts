@@ -1,6 +1,16 @@
-import type { TodoItem } from "./types.ts";
-
 const EXTENSION_PATTERN = /^([^:\s]+):([^:\s]+)$/;
+
+/** Metadata collected from a task's text. */
+export interface TodoMetadata {
+  projects: string[];
+  contexts: string[];
+  data: Record<string, string>;
+}
+
+/** Everything derived from a task's text in one token pass. */
+export interface TodoText extends TodoMetadata {
+  description: string;
+}
 
 function tokenize(text: string): string[] {
   const trimmed = text.trim();
@@ -30,14 +40,17 @@ export function isMetadataToken(token: string): boolean {
   return EXTENSION_PATTERN.test(token);
 }
 
-/** Collect projects, contexts, and extensions from task text. */
-export function parseMetadata(text: string): Pick<
-  TodoItem,
-  "projects" | "contexts" | "extensions"
-> {
+/**
+ * Collect a task's description, projects, contexts, and extensions in one pass.
+ *
+ * Previous versions tokenized the text once for metadata and again to strip it;
+ * doing both here keeps parsing to a single split per line.
+ */
+export function parseText(text: string): TodoText {
   const projects: string[] = [];
   const contexts: string[] = [];
-  const extensions: Record<string, string> = {};
+  const data: Record<string, string> = {};
+  const descriptionTokens: string[] = [];
 
   for (const token of tokenize(text)) {
     if (token.startsWith("+") && token.length > 1) {
@@ -54,11 +67,25 @@ export function parseMetadata(text: string): Pick<
     const key = extension?.[1];
     const value = extension?.[2];
     if (key !== undefined && value !== undefined) {
-      extensions[key] = value;
+      data[key] = value;
+      continue;
     }
+
+    descriptionTokens.push(token);
   }
 
-  return { projects, contexts, extensions };
+  return {
+    description: descriptionTokens.join(" "),
+    projects,
+    contexts,
+    data,
+  };
+}
+
+/** Collect projects, contexts, and extensions from task text. */
+export function parseMetadata(text: string): TodoMetadata {
+  const { projects, contexts, data } = parseText(text);
+  return { projects, contexts, data };
 }
 
 /**
@@ -68,7 +95,5 @@ export function parseMetadata(text: string): Pick<
  * be normalized.
  */
 export function stripMetadata(text: string): string {
-  return tokenize(text)
-    .filter((token) => !isMetadataToken(token))
-    .join(" ");
+  return parseText(text).description;
 }
