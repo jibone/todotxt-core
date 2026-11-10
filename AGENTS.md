@@ -29,8 +29,13 @@ with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
 - Runtime and tests are Bun (`types: ["bun"]`); TypeScript 7 is a dev dependency and is run via `bunx`.
 
 ## Publishing
+- Releases are manual and local. Use `bun run release <current|patch|minor|major>`
+  (`--dry-run` supported). The script requires `master`, a clean and in-sync
+  tree, npm auth, and GitHub CLI auth; it runs tests/typecheck/build/package
+  validation, bumps the version, publishes with `npm publish`, pushes the commit
+  and tag, and creates a GitHub Release with generated notes.
+- Use `current` for the very first release (version already in `package.json`);
+  use `patch`/`minor`/`major` afterwards.
+- There is no CI publish workflow. Keep npm 2FA enabled. Manual publishes do not
+  generate provenance attestations.
 - `prepublishOnly` runs tests and typecheck; `prepack` runs the build.
-- `.github/workflows/publish.yml` publishes on GitHub Release using npm trusted
-  publishing (OIDC, no `NPM_TOKEN`).
-- The first publish must be done manually after `npm login` and configuring the
-  trusted publisher on npmjs.com for `jibone/todotxt-core` and `publish.yml`.
