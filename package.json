@@ -1,6 +1,6 @@
 {
   "name": "@jibone/todotxt-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Parse and query todo.txt files with runtime-agnostic file hooks.",
   "license": "MIT",
   "author": "J Shamsul Bahri",
