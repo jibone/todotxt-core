@@ -1,5 +1,5 @@
 import { parseText } from "./metadata.ts";
-import type { TodoRecord } from "./types.ts";
+import type { ParseWarningHandler, TodoRecord } from "./types.ts";
 
 const PRIORITY_PATTERN = /^\(([A-Z])\) /;
 const LEADING_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})(?: |$)/;
@@ -35,8 +35,14 @@ function takeLeadingDate(input: string): [date: string | null, rest: string] {
  *   creation date.
  * - Projects, contexts, and `key:value` metadata may appear anywhere in the
  *   remaining text.
+ *
+ * Recoverable issues are reported to `onWarning` when supplied; parsing still
+ * produces a record.
  */
-export function parseLine(line: string): TodoRecord {
+export function parseLine(
+  line: string,
+  onWarning?: ParseWarningHandler,
+): TodoRecord {
   let rest = line;
   let completed = false;
   let priority: string | null = null;
@@ -59,7 +65,7 @@ export function parseLine(line: string): TodoRecord {
   }
 
   const text = rest.trim();
-  const { description, projects, contexts, data } = parseText(text);
+  const { description, projects, contexts, data } = parseText(text, onWarning);
 
   return {
     completed,
@@ -77,14 +83,28 @@ export function parseLine(line: string): TodoRecord {
  * Parse the contents of a todo.txt file.
  *
  * Lines are split on `\n` or `\r\n`; blank and whitespace-only lines are
- * skipped. Every remaining line becomes a {@link TodoRecord}.
+ * skipped. Every remaining line becomes a {@link TodoRecord}. Warnings are
+ * annotated with the 1-based physical line number.
  */
-export function parseDocument(contents: string): TodoRecord[] {
+export function parseDocument(
+  contents: string,
+  onWarning?: ParseWarningHandler,
+): TodoRecord[] {
   const records: TodoRecord[] = [];
+  let lineNumber = 0;
 
   for (const line of contents.split(/\r?\n/)) {
+    lineNumber += 1;
+
     if (line.trim() !== "") {
-      records.push(parseLine(line));
+      records.push(
+        parseLine(
+          line,
+          onWarning
+            ? (warning) => onWarning({ ...warning, line: lineNumber })
+            : undefined,
+        ),
+      );
     }
   }
 

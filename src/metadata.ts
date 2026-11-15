@@ -1,3 +1,5 @@
+import type { ParseWarningHandler } from "./types.ts";
+
 const EXTENSION_PATTERN = /^([^:\s]+):([^:\s]+)$/;
 
 /** Metadata collected from a task's text. */
@@ -45,8 +47,14 @@ export function isMetadataToken(token: string): boolean {
  *
  * Previous versions tokenized the text once for metadata and again to strip it;
  * doing both here keeps parsing to a single split per line.
+ *
+ * When a `key:value` key is repeated, `onWarning` receives a
+ * `duplicate-metadata-key` warning and the last value wins.
  */
-export function parseText(text: string): TodoText {
+export function parseText(
+  text: string,
+  onWarning?: ParseWarningHandler,
+): TodoText {
   const projects: string[] = [];
   const contexts: string[] = [];
   const data: Record<string, string> = {};
@@ -67,6 +75,14 @@ export function parseText(text: string): TodoText {
     const key = extension?.[1];
     const value = extension?.[2];
     if (key !== undefined && value !== undefined) {
+      if (Object.hasOwn(data, key)) {
+        onWarning?.({
+          code: "duplicate-metadata-key",
+          message: `Duplicate metadata key "${key}"; the last value wins.`,
+          meta: { key, previousValue: data[key], value },
+        });
+      }
+
       data[key] = value;
       continue;
     }

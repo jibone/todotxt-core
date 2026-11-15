@@ -19,7 +19,7 @@ with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
 - Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun example/todo-all.ts`, `bun example/todo-project.ts`, `bun example/todo-context.ts`, `bun example/todo-cross.ts`
+- Run examples: `bun example/todo-all.ts`, `bun example/todo-project.ts`, `bun example/todo-context.ts`, `bun example/todo-cross.ts`, `bun example/todo-logger.ts`
 
 ## Gotchas
 - There is no linter or formatter. CI runs typecheck, tests, build, and package validation from `.github/workflows/ci.yml`.

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { isMetadataToken, parseMetadata, stripMetadata } from "./metadata.ts";
+import {
+  isMetadataToken,
+  parseMetadata,
+  parseText,
+  stripMetadata,
+} from "./metadata.ts";
+import type { ParseWarning } from "./types.ts";
 
 describe("isMetadataToken", () => {
   test("recognizes projects, contexts, and extensions", () => {
@@ -35,6 +41,32 @@ describe("parseMetadata", () => {
       contexts: [],
       data: {},
     });
+  });
+});
+
+describe("parseText warnings", () => {
+  test("reports duplicate keys while keeping the last value", () => {
+    const warnings: ParseWarning[] = [];
+    const text = parseText("Task due:2010-01-02 due:2010-02-02", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(text.data).toEqual({ due: "2010-02-02" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.meta).toEqual({
+      key: "due",
+      previousValue: "2010-01-02",
+      value: "2010-02-02",
+    });
+  });
+
+  test("does not treat inherited property names as duplicates", () => {
+    const warnings: ParseWarning[] = [];
+    parseText("Task constructor:first toString:second", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(warnings).toEqual([]);
   });
 });
 

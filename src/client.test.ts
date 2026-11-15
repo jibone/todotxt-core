@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createTodoTxt } from "./client.ts";
+import type { LogLevel, ParseWarning } from "./types.ts";
+
+interface LogCall {
+  level: LogLevel;
+  message: string;
+  meta: Record<string, unknown> | undefined;
+}
 
 describe("createTodoTxt", () => {
   test("reads through the hook and parses every line into JSON", async () => {
@@ -274,5 +281,138 @@ describe("in-memory cache", () => {
     expect(pending).toHaveLength(1);
     expect(completed).toHaveLength(0);
     expect(readCalls).toBe(1);
+  });
+});
+
+describe("logger", () => {
+  test("is silent by default", async () => {
+    const todos = createTodoTxt({
+      read: () => "Task due:2010-01-02 due:2010-02-02",
+    });
+
+    const records = await todos.all();
+
+    expect(records[0]?.data).toEqual({ due: "2010-02-02" });
+  });
+
+  test("logs the read lifecycle and duplicate metadata warnings", async () => {
+    const calls: LogCall[] = [];
+    const todos = createTodoTxt({
+      read: () => ["Task due:2010-01-02 due:2010-02-02", "Other"].join("\n"),
+      logger: (level, message, meta) => {
+        calls.push({ level, message, meta });
+      },
+    });
+
+    const records = await todos.all();
+
+    expect(records[0]?.data).toEqual({ due: "2010-02-02" });
+    expect(calls.map((call) => call.level)).toEqual([
+      "debug",
+      "warn",
+      "debug",
+    ]);
+    expect(calls[0]?.message).toBe("Reading todo file");
+    expect(calls[1]?.message).toBe(
+      'Duplicate metadata key "due"; the last value wins.',
+    );
+    expect(calls[1]?.meta).toMatchObject({
+      code: "duplicate-metadata-key",
+      line: 1,
+      key: "due",
+      previousValue: "2010-01-02",
+      value: "2010-02-02",
+    });
+    expect(calls[2]?.message).toBe("Parsed todo file");
+    expect(calls[2]?.meta).toEqual({ records: 2 });
+  });
+
+  test("reports the physical line number of a duplicate key", async () => {
+    const warnings: ParseWarning[] = [];
+    const todos = createTodoTxt({
+      read: () => ["First", "", "Task due:a due:b"].join("\n"),
+      logger: (level, message, meta) => {
+        if (level === "warn") {
+          warnings.push({
+            code: "duplicate-metadata-key",
+            message,
+            line: meta?.line as number | undefined,
+            meta: meta ?? {},
+          });
+        }
+      },
+    });
+
+    await todos.all();
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.line).toBe(3);
+  });
+
+  test("does not warn about unique metadata keys", async () => {
+    const calls: LogCall[] = [];
+    const todos = createTodoTxt({
+      read: () => "Task due:2010-01-02 rec:1w",
+      logger: (level, message, meta) => {
+        calls.push({ level, message, meta });
+      },
+    });
+
+    await todos.all();
+
+    expect(calls.filter((call) => call.level === "warn")).toHaveLength(0);
+  });
+
+  test("does not log again when a query uses the cache", async () => {
+    const calls: LogCall[] = [];
+    const todos = createTodoTxt({
+      read: () => "Task",
+      logger: (level, message, meta) => {
+        calls.push({ level, message, meta });
+      },
+    });
+
+    await todos.pending();
+    await todos.pending();
+    await todos.projects();
+
+    expect(calls.map((call) => call.level)).toEqual(["debug", "debug"]);
+  });
+
+  test("propagates read errors without logging them as errors", async () => {
+    const calls: LogCall[] = [];
+    const todos = createTodoTxt({
+      read: () => {
+        throw new Error("read failed");
+      },
+      logger: (level, message, meta) => {
+        calls.push({ level, message, meta });
+      },
+    });
+
+    await expect(todos.all()).rejects.toThrow("read failed");
+    expect(calls.map((call) => call.level)).toEqual(["debug"]);
+  });
+
+  test("ignores a throwing logger", async () => {
+    const todos = createTodoTxt({
+      read: () => "Task",
+      logger: () => {
+        throw new Error("logger failed");
+      },
+    });
+
+    expect(await todos.all()).toHaveLength(1);
+  });
+
+  test("ignores a logger that rejects asynchronously", async () => {
+    const todos = createTodoTxt({
+      read: () => "Task",
+      logger: async () => {
+        throw new Error("logger failed");
+      },
+    });
+
+    expect(await todos.all()).toHaveLength(1);
   });
 });
