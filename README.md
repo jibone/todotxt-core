@@ -54,7 +54,8 @@ const todos = createTodoTxt({
 ```
 
 `write` is optional until the write APIs are implemented, so read-only clients
-can omit it.
+can omit it. `logger` is optional too and silent when omitted; see
+[Logging](#logging).
 
 `all()` returns a `TodoRecord` for each non-empty line:
 
@@ -68,6 +69,10 @@ can omit it.
 | `projects`    | Projects without the `+` prefix                                 |
 | `contexts`    | Contexts without the `@` prefix                                 |
 | `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                  |
+
+If a `key:value` key appears more than once, the last value wins. With a
+[logger](#logging) configured, the parser also emits a `warn` for each duplicate
+key.
 
 ## Querying
 
@@ -165,6 +170,42 @@ Filters are applied in sequence:
   completed record. A project with both pending and completed items appears in
   both `pending().projects()` and `completed().projects()`.
 
+## Logging
+
+`createTodoTxt` is silent by default. Pass a `logger` to receive diagnostics.
+It is called as `logger(level, message, meta?)`, where `level` is `"debug"`,
+`"info"`, `"warn"`, or `"error"`. Bring your own implementation:
+
+```ts
+import { createTodoTxt } from "@jibone/todotxt-core";
+import type { TodoLogger } from "@jibone/todotxt-core";
+
+const logger: TodoLogger = (level, message, meta) => {
+  const line = `[todotxt:${level}] ${message}`;
+
+  if (meta) {
+    console.log(line, meta);
+  } else {
+    console.log(line);
+  }
+};
+
+const todos = createTodoTxt({
+  read: () => Bun.file("todo.txt").text(),
+  logger,
+});
+```
+
+Currently the client emits:
+
+- `debug` when a read starts and when it finishes, with `{ records }`.
+- `warn` for each duplicate `key:value` key; the last value still wins.
+
+Cached queries do not log. Read failures stay promise rejections and are not
+logged as `error`; the other levels are reserved for the write APIs. Logging is
+best-effort: a logger that throws or rejects never breaks a read or query. See
+`example/todo-logger.ts`.
+
 ## Parser
 
 The parser also works without the client wrapper:
@@ -189,6 +230,7 @@ bun example/todo-all.ts
 bun example/todo-project.ts
 bun example/todo-context.ts
 bun example/todo-cross.ts
+bun example/todo-logger.ts
 ```
 
 ## Development

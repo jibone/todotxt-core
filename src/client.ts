@@ -2,7 +2,7 @@ import { cloneRecords } from "./clone.ts";
 import { parseDocument } from "./parse.ts";
 import { createTodoQuery } from "./query.ts";
 import type { TodoQuery } from "./query.ts";
-import type { TodoFileHooks, TodoRecord } from "./types.ts";
+import type { TodoHooks, TodoLogger, TodoRecord } from "./types.ts";
 
 /** The read interface returned by {@link createTodoTxt}. */
 export interface TodoTxtClient {
@@ -27,7 +27,8 @@ export interface TodoTxtClient {
  *
  * The library performs no IO of its own: `hooks.read` is responsible for
  * producing the file contents and `hooks.write` will be used by the write APIs
- * once they are implemented.
+ * once they are implemented. `hooks.logger` is optional and silent by default;
+ * when supplied, it receives read lifecycle and parse warning diagnostics.
  *
  * Parsed records are cached in memory per client. The first query loads and
  * parses the file; later queries reuse that snapshot. {@link TodoTxtClient.all}
@@ -41,14 +42,45 @@ export interface TodoTxtClient {
  * Returned records are copies, so callers may mutate them without affecting the
  * cache.
  */
-export function createTodoTxt(hooks: TodoFileHooks): TodoTxtClient {
+export function createTodoTxt(hooks: TodoHooks): TodoTxtClient {
   let cache: TodoRecord[] | undefined;
   let inFlight: Promise<TodoRecord[]> | undefined;
   let generation = 0;
 
+  const logger = hooks.logger;
+
+  const log: TodoLogger = (level, message, meta) => {
+    if (!logger) {
+      return;
+    }
+
+    try {
+      const result = logger(level, message, meta);
+
+      if (
+        result &&
+        typeof (result as PromiseLike<unknown>).then === "function"
+      ) {
+        void Promise.resolve(result).catch(() => {});
+      }
+    } catch {
+      // Logging is best-effort and must never break reads or queries.
+    }
+  };
+
   const readFresh = async (): Promise<TodoRecord[]> => {
     const currentGeneration = ++generation;
-    const records = parseDocument(await hooks.read());
+
+    log("debug", "Reading todo file");
+    const contents = await hooks.read();
+    const records = parseDocument(contents, (warning) => {
+      log("warn", warning.message, {
+        ...warning.meta,
+        code: warning.code,
+        line: warning.line,
+      });
+    });
+    log("debug", "Parsed todo file", { records: records.length });
 
     if (currentGeneration === generation) {
       cache = records;

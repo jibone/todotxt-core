@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseDocument, parseLine } from "./parse.ts";
+import type { ParseWarning } from "./types.ts";
 
 describe("parseLine", () => {
   describe("priorities", () => {
@@ -313,5 +314,55 @@ describe("parseDocument", () => {
   test("returns an empty array for empty input", () => {
     expect(parseDocument("")).toEqual([]);
     expect(parseDocument("\n\r\n   \n")).toEqual([]);
+  });
+});
+
+describe("parse warnings", () => {
+  test("parseLine reports duplicate metadata keys without a line number", () => {
+    const warnings: ParseWarning[] = [];
+    const item = parseLine("Task due:2010-01-02 due:2010-02-02", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(item.data).toEqual({ due: "2010-02-02" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      code: "duplicate-metadata-key",
+      message: 'Duplicate metadata key "due"; the last value wins.',
+      meta: {
+        key: "due",
+        previousValue: "2010-01-02",
+        value: "2010-02-02",
+      },
+    });
+    expect(warnings[0]?.line).toBeUndefined();
+  });
+
+  test("parseDocument reports 1-based physical line numbers", () => {
+    const warnings: ParseWarning[] = [];
+    parseDocument(
+      ["(A) First", "", "Task due:a due:b", "Task rec:1w rec:2w"].join("\n"),
+      (warning) => {
+        warnings.push(warning);
+      },
+    );
+
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]?.line).toBe(3);
+    expect(warnings[1]?.line).toBe(4);
+  });
+
+  test("does not warn about unique metadata keys", () => {
+    const warnings: ParseWarning[] = [];
+    parseDocument("Task due:2010-01-02 rec:1w", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
+  test("does not require a warning handler", () => {
+    expect(parseLine("Task due:a due:b").data).toEqual({ due: "b" });
+    expect(parseDocument("Task due:a due:b")).toHaveLength(1);
   });
 });
