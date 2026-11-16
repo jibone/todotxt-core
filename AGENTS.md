@@ -19,9 +19,10 @@ with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
 - Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun example/todo-all.ts`, `bun example/todo-project.ts`, `bun example/todo-context.ts`, `bun example/todo-cross.ts`, `bun example/todo-logger.ts`
+- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-try.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
 
 ## Gotchas
+- Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`. Update both when parser behavior changes.
 - There is no linter or formatter. CI runs typecheck, tests, build, and package validation from `.github/workflows/ci.yml`.
 - Since this is published as a library, keep `index.ts` exporting the public API rather than running side effects when imported.
 - `verbatimModuleSyntax` is enabled: use `import type` for type-only imports.

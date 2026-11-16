@@ -55,24 +55,29 @@ const todos = createTodoTxt({
 
 `write` is optional until the write APIs are implemented, so read-only clients
 can omit it. `logger` is optional too and silent when omitted; see
-[Logging](#logging).
+[Logging](#logging). The runnable Node version is
+[`examples/node/todo-all.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/node/todo-all.ts).
 
 `all()` returns a `TodoRecord` for each non-empty line:
 
-| Field         | Description                                                     |
-| ------------- | --------------------------------------------------------------- |
-| `completed`   | `true` when the line starts with `x `                           |
-| `priority`    | Uppercase letter from `(A)`–`(Z)`, or `null`                    |
-| `completedAt` | `YYYY-MM-DD` completion date, or `null`                         |
-| `createdAt`   | `YYYY-MM-DD` creation date, or `null`                           |
-| `description` | Task text with projects, contexts, and `key:value` tags removed |
-| `projects`    | Projects without the `+` prefix                                 |
-| `contexts`    | Contexts without the `@` prefix                                 |
-| `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                  |
+| Field         | Description                                                         |
+| ------------- | ------------------------------------------------------------------- |
+| `completed`   | `true` when the line starts with `x `                               |
+| `priority`    | Uppercase letter from `(A)`–`(Z)`, or `null`                        |
+| `completedAt` | `YYYY-MM-DD` completion date that exists on the calendar, or `null` |
+| `createdAt`   | `YYYY-MM-DD` creation date that exists on the calendar, or `null`   |
+| `description` | Task text with projects, contexts, and `key:value` tags removed     |
+| `projects`    | Projects without the `+` prefix                                     |
+| `contexts`    | Contexts without the `@` prefix                                     |
+| `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                      |
 
 If a `key:value` key appears more than once, the last value wins. With a
 [logger](#logging) configured, the parser also emits a `warn` for each duplicate
 key.
+
+See [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md)
+for the complete rule-by-rule interpretation, including date validation and
+deliberate leniencies.
 
 ## Querying
 
@@ -200,11 +205,13 @@ Currently the client emits:
 
 - `debug` when a read starts and when it finishes, with `{ records }`.
 - `warn` for each duplicate `key:value` key; the last value still wins.
+- `warn` for each leading date that is not a real calendar date; the value stays
+  in the description.
 
 Cached queries do not log. Read failures stay promise rejections and are not
 logged as `error`; the other levels are reserved for the write APIs. Logging is
 best-effort: a logger that throws or rejects never breaks a read or query. See
-`example/todo-logger.ts`.
+`examples/todo-logger.ts`.
 
 ## Parser
 
@@ -218,20 +225,44 @@ const records = parseDocument(contents);
 ```
 
 `parseLine` returns a `TodoRecord` directly. The original raw line is not
-retained.
+retained. Dates must be real calendar dates in `YYYY-MM-DD` form; a shape-valid
+but nonexistent date such as `2011-99-99` is treated as text and reported as an
+`invalid-date` warning. The full rule-by-rule interpretation is documented in
+[How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
 Writing is not implemented yet. The `write` hook is optional for now and will
 become required for the write APIs when they land.
 
-## Example
+## Examples
 
 ```sh
-bun example/todo-all.ts
-bun example/todo-project.ts
-bun example/todo-context.ts
-bun example/todo-cross.ts
-bun example/todo-logger.ts
+bun examples/todo-all.ts
+bun examples/todo-project.ts
+bun examples/todo-context.ts
+bun examples/todo-cross.ts
+bun examples/todo-logger.ts
+bun examples/todo-try.ts
 ```
+
+Each format rule also has a runnable example:
+
+```sh
+bun examples/rules/rule-1-priority.ts
+bun examples/rules/rule-2-creation-date.ts
+bun examples/rules/rule-3-projects-contexts.ts
+bun examples/rules/rule-4-completed.ts
+bun examples/rules/rule-5-metadata.ts
+```
+
+Node.js examples show the same API with `node:fs/promises` hooks:
+
+```sh
+node examples/node/todo-all.ts
+node examples/node/todo-logger.ts
+```
+
+These require Node 22.18+ for native TypeScript type stripping; the library
+itself still runs on Node 20+.
 
 ## Development
 
