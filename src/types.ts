@@ -27,10 +27,15 @@ export type TodoLogger = (
  * A non-fatal issue found while parsing.
  *
  * Warnings describe recoverable conditions; the parser still returns a record.
+ *
+ * - `duplicate-metadata-key`: a `key:value` key appears more than once; the
+ *   last value wins.
+ * - `invalid-date`: a leading `YYYY-MM-DD` value is not a real calendar date.
+ *   The value is not used as a date and remains part of the description.
  */
 export interface ParseWarning {
   /** Stable identifier for programmatic handling. */
-  code: "duplicate-metadata-key";
+  code: "duplicate-metadata-key" | "invalid-date";
   /** Human-readable description of the issue. */
   message: string;
   /** 1-based physical line number, when called through {@link parseDocument}. */
@@ -74,9 +79,19 @@ export interface TodoRecord {
   completed: boolean;
   /** Uppercase priority letter, e.g. `"A"` for `(A)`, or `null`. */
   priority: string | null;
-  /** Completion date in `YYYY-MM-DD` form, or `null`. */
+  /**
+   * Completion date in `YYYY-MM-DD` form, or `null`.
+   *
+   * The value is always a real calendar date. A shape-valid but nonexistent
+   * date (such as `2011-99-99`) is left in the description instead.
+   */
   completedAt: string | null;
-  /** Creation date in `YYYY-MM-DD` form, or `null`. */
+  /**
+   * Creation date in `YYYY-MM-DD` form, or `null`.
+   *
+   * The value is always a real calendar date. A shape-valid but nonexistent
+   * date (such as `2011-99-99`) is left in the description instead.
+   */
   createdAt: string | null;
   /** Task text with projects, contexts, and `key:value` metadata removed. */
   description: string;
