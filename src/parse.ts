@@ -1,27 +1,52 @@
+import { isValidDate } from "./date.ts";
 import { parseText } from "./metadata.ts";
 import type { ParseWarningHandler, TodoRecord } from "./types.ts";
 
 const PRIORITY_PATTERN = /^\(([A-Z])\) /;
 const LEADING_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})(?: |$)/;
 
+type LeadingDate =
+  | { kind: "absent"; rest: string }
+  | { kind: "valid"; date: string; rest: string }
+  | { kind: "invalid"; value: string; rest: string };
+
 /**
- * Consume a `YYYY-MM-DD` date from the start of `input`.
+ * Inspect a `YYYY-MM-DD` token at the start of `input`.
  *
- * Only the shape is validated; the date does not have to exist on a calendar
- * (matching the literal format rules).
+ * A value with the right shape that does not exist on the calendar is reported
+ * as `invalid`. In that case `rest` is the original input, so callers leave the
+ * token in the description instead of consuming it.
  */
-function takeLeadingDate(input: string): [date: string | null, rest: string] {
+function takeLeadingDate(input: string): LeadingDate {
   const match = LEADING_DATE_PATTERN.exec(input);
   if (!match) {
-    return [null, input];
+    return { kind: "absent", rest: input };
   }
 
   const date = match[1];
   if (date === undefined) {
-    return [null, input];
+    return { kind: "absent", rest: input };
   }
 
-  return [date, input.slice(match[0]!.length)];
+  if (!isValidDate(date)) {
+    return { kind: "invalid", value: date, rest: input };
+  }
+
+  return { kind: "valid", date, rest: input.slice(match[0]!.length) };
+}
+
+function warnInvalidDate(
+  value: string,
+  field: "completedAt" | "createdAt",
+  onWarning?: ParseWarningHandler,
+): void {
+  const label = field === "completedAt" ? "completion" : "creation";
+
+  onWarning?.({
+    code: "invalid-date",
+    message: `Invalid ${label} date "${value}"; treating it as text.`,
+    meta: { value, field },
+  });
 }
 
 /**
@@ -33,6 +58,8 @@ function takeLeadingDate(input: string): [date: string | null, rest: string] {
  *   and then a creation date.
  * - Incomplete tasks may start with an `(A)`–`(Z)` priority and an optional
  *   creation date.
+ * - Dates must be real calendar dates in `YYYY-MM-DD` form. A shape-valid but
+ *   nonexistent date is treated as text.
  * - Projects, contexts, and `key:value` metadata may appear anywhere in the
  *   remaining text.
  *
@@ -52,8 +79,23 @@ export function parseLine(
   if (rest.startsWith("x ")) {
     completed = true;
     rest = rest.slice(2);
-    [completedAt, rest] = takeLeadingDate(rest);
-    [createdAt, rest] = takeLeadingDate(rest);
+
+    const completedDate = takeLeadingDate(rest);
+    if (completedDate.kind === "valid") {
+      completedAt = completedDate.date;
+      rest = completedDate.rest;
+
+      const createdDate = takeLeadingDate(rest);
+      if (createdDate.kind === "valid") {
+        createdAt = createdDate.date;
+        rest = createdDate.rest;
+      } else if (createdDate.kind === "invalid") {
+        warnInvalidDate(createdDate.value, "createdAt", onWarning);
+      }
+    } else if (completedDate.kind === "invalid") {
+      // The same token cannot also be a creation date, so only warn once.
+      warnInvalidDate(completedDate.value, "completedAt", onWarning);
+    }
   } else {
     const priorityMatch = PRIORITY_PATTERN.exec(rest);
     if (priorityMatch) {
@@ -61,7 +103,13 @@ export function parseLine(
       rest = rest.slice(priorityMatch[0]!.length);
     }
 
-    [createdAt, rest] = takeLeadingDate(rest);
+    const createdDate = takeLeadingDate(rest);
+    if (createdDate.kind === "valid") {
+      createdAt = createdDate.date;
+      rest = createdDate.rest;
+    } else if (createdDate.kind === "invalid") {
+      warnInvalidDate(createdDate.value, "createdAt", onWarning);
+    }
   }
 
   const text = rest.trim();
