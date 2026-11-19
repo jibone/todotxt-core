@@ -115,14 +115,24 @@ parseLine("(A) Call Mom", { includeSource: true, line: 7 });
 
 Queries are lazy: chaining filters does no IO. The first query on a client reads
 and parses the file once, then later queries reuse that in-memory snapshot.
-Every filter operates on the array of parsed JSON records.
+Every filter operates on the array of parsed JSON records. Filters compose
+with AND: each call narrows the result. Array arguments are OR within a single
+call, so `project(["Garden", "Moving"])` matches either name while
+`project("Garden").project("Moving")` requires both.
 
 ```ts
-await todos.all();                 // TodoRecord[] (always reloads)
-await todos.pending();             // TodoRecord[]
-await todos.completed();           // TodoRecord[]
-await todos.project("TodoTxt");    // TodoRecord[]
-await todos.context("phone");      // TodoRecord[]
+await todos.all();                     // TodoRecord[] (always reloads)
+await todos.pending();                 // TodoRecord[]
+await todos.completed();               // TodoRecord[]
+await todos.project("TodoTxt");         // TodoRecord[]
+await todos.context("phone");           // TodoRecord[]
+await todos.priority("A");              // TodoRecord[]
+await todos.search("meatballs");       // TodoRecord[]
+await todos.meta("due");                // TodoRecord[]
+await todos.createdAfter("2024-01-01"); // TodoRecord[]
+await todos.notProject("Garden");       // TodoRecord[]
+await todos.count();                   // number
+await todos.first();                   // TodoRecord | undefined
 ```
 
 Filters compose, so they can be combined in any order:
@@ -131,6 +141,8 @@ Filters compose, so they can be combined in any order:
 await todos.project("TodoTxt").pending();
 await todos.project("TodoTxt").context("computer");
 await todos.pending().project("OpenSource").context("github");
+await todos.priority("A").search("mom");
+await todos.project(["Garden", "Moving"]).sortBy("priority");
 ```
 
 ### Caching and refresh
@@ -193,8 +205,10 @@ await todos.context("home").pending().projects();
 await todos.context("home").completed().projects();
 ```
 
-Names are matched exactly and case-sensitively. An unknown project or context
-resolves to an empty array.
+Names are matched exactly and case-sensitively by default. An unknown project
+or context resolves to an empty array. An empty array argument also matches
+nothing; see [Case-insensitive matching](#case-insensitive-matching) for the
+per-call and client-wide options.
 
 ### Status semantics
 
@@ -206,6 +220,98 @@ Filters are applied in sequence:
 - `completed().projects()` returns projects that appear on at least one
   completed record. A project with both pending and completed items appears in
   both `pending().projects()` and `completed().projects()`.
+
+### Priority, search, and metadata
+
+```ts
+await todos.priority("A");         // exactly (A); "a" matches nothing
+await todos.priority(["A", "B"]);  // either letter
+
+await todos.search("PR");                          // substring of description,
+                                                   // case-insensitive by default
+await todos.search("pr", { caseSensitive: true }); // exact-case substring
+
+await todos.meta("due");                // has due, whatever the value
+await todos.meta("due", "2024-04-01");  // exact value
+await todos.hasMeta("due");             // same as meta("due"), more readable
+```
+
+`search` only looks at `description`. Projects, contexts, and `key:value` tags
+have their own filters.
+
+### Date filters
+
+Date filters compare strictly against validated `YYYY-MM-DD` values, so plain
+string comparison is safe. Records without the date never match. Invalid
+arguments throw a `TypeError` when the query is built, before any read happens:
+
+```ts
+await todos.createdAfter("2024-01-01");   // createdAt strictly later
+await todos.createdBefore("2024-01-01");  // createdAt strictly earlier
+await todos.completedAfter("2024-01-01"); // completedAt strictly later
+await todos.completedBefore("2024-01-01");// completedAt strictly earlier
+
+todos.createdAfter("2024-02-30");
+// TypeError: createdAfter() expected a real calendar date in YYYY-MM-DD form
+```
+
+### Negation
+
+`notProject` and `notContext` keep the records without a name. An array
+excludes every listed name; an empty array excludes nothing:
+
+```ts
+await todos.notProject("Garden");
+await todos.notContext(["phone", "computer"]);
+```
+
+### Sorting
+
+`sortBy` appends an ordering step after filtering. The sort is stable, so
+records with equal keys keep file order. Missing values — `null` priorities or
+dates, and missing or invalid `due` values — sort last in both directions;
+`"desc"` reverses only the value comparison. Calling `sortBy` twice keeps the
+last call.
+
+```ts
+await todos.pending().sortBy("priority");     // A first, then B–Z, no priority last
+await todos.sortBy("createdAt");              // earliest first, nulls last
+await todos.sortBy("completedAt", "desc");    // latest first, nulls still last
+await todos.sortBy("due");                    // reads data.due; invalid or missing last
+await todos.sortBy("description");            // localeCompare ordering
+```
+
+### count() and first()
+
+`count()` and `first()` resolve through the same loader and cache as every
+other query. `first()` returns the first record of the filtered (and sorted)
+result, or `undefined` when nothing matches, and it is a copy:
+
+```ts
+await todos.pending().count();                 // 12
+await todos.sortBy("priority").first();        // first (A) task
+await todos.project("Missing").first();        // undefined
+```
+
+### Case-insensitive matching
+
+Name matching is exact by default. Change the default for a whole client, or
+for a single call:
+
+```ts
+const todos = createTodoTxt({
+  read: () => Bun.file("todo.txt").text(),
+  caseSensitive: false,
+});
+
+await todos.project("garden"); // matches +Garden
+await todos.project("TodoTxt", { caseSensitive: true }); // back to exact
+```
+
+Case-insensitive comparison uses `toLowerCase()`, which is deterministic across
+machines and locales but is not full Unicode case folding. `projects()` and
+`contexts()` always preserve original casing. `search` is independent of this
+setting: it is case-insensitive by default whatever the client says.
 
 ## Logging
 
@@ -278,6 +384,8 @@ bun examples/todo-cross.ts
 bun examples/todo-logger.ts
 bun examples/todo-try.ts
 bun examples/todo-source.ts
+bun examples/todo-filters.ts
+bun examples/todo-sort.ts
 ```
 
 Each format rule also has a runnable example:
