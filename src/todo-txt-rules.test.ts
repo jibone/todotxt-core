@@ -562,3 +562,74 @@ describe("Documented strictness and leniency", () => {
     ]);
   });
 });
+
+describe("Source metadata is opt-in", () => {
+  test("records omit line and raw by default", () => {
+    expect(parseLine("(A) Call Mom")).toEqual(
+      record({ priority: "A", description: "Call Mom" }),
+    );
+    expect(parseDocument("(A) Call Mom")).toEqual([
+      record({ priority: "A", description: "Call Mom" }),
+    ]);
+  });
+
+  test("includeSource numbers physical lines, counting skipped blanks", () => {
+    expect(parseDocument("a\n\nb", { includeSource: true })).toEqual([
+      record({ description: "a", line: 1, raw: "a" }),
+      record({ description: "b", line: 3, raw: "b" }),
+    ]);
+  });
+
+  test("raw preserves the exact line, including whitespace and tag order", () => {
+    expect(parseLine("  (A)   Call Mom  +Family @phone", {
+      includeSource: true,
+    })).toEqual(
+      record({
+        priority: null,
+        description: "(A) Call Mom",
+        projects: ["Family"],
+        contexts: ["phone"],
+        raw: "  (A)   Call Mom  +Family @phone",
+      }),
+    );
+  });
+
+  test("raw has no trailing carriage return for CRLF documents", () => {
+    expect(
+      parseDocument("(A) Call Mom\r\nx 2011-03-03 Done\r\n", {
+        includeSource: true,
+      }),
+    ).toEqual([
+      record({
+        priority: "A",
+        description: "Call Mom",
+        line: 1,
+        raw: "(A) Call Mom",
+      }),
+      record({
+        completed: true,
+        completedAt: "2011-03-03",
+        description: "Done",
+        line: 2,
+        raw: "x 2011-03-03 Done",
+      }),
+    ]);
+  });
+
+  test("parseLine attaches a caller-supplied line number", () => {
+    expect(parseLine("(A) Call Mom", { includeSource: true, line: 4 })).toEqual(
+      record({
+        priority: "A",
+        description: "Call Mom",
+        line: 4,
+        raw: "(A) Call Mom",
+      }),
+    );
+  });
+
+  test("a line number without includeSource is ignored", () => {
+    expect(parseLine("(A) Call Mom", { line: 4 })).toEqual(
+      record({ priority: "A", description: "Call Mom" }),
+    );
+  });
+});

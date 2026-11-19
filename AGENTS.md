@@ -3,7 +3,7 @@
 ## Project
 `todotxt-core` is a todo.txt parser library intended for publication as an npm package. Bun + TypeScript, ESM-only, with a single entrypoint at `index.ts`.
 
-Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). There is no separate `TodoItem`/raw representation. `createTodoTxt()` returns a lazy, chainable query API over parsed records:
+Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). There is no separate `TodoItem`/raw representation; the optional `line`/`raw` source fields are attached to records only when the caller opts in with `includeSource` (parser `ParseOptions` or client `TodoClientOptions`). `createTodoTxt()` returns a lazy, chainable query API over parsed records:
 
 - `all()`, `pending()`, `completed()`, `project(name)`, `context(name)`
 - `projects()` and `contexts()` pluck unique, alphabetically sorted names

@@ -1,6 +1,10 @@
 import { isValidDate } from "./date.ts";
 import { parseText } from "./metadata.ts";
-import type { ParseWarningHandler, TodoRecord } from "./types.ts";
+import type {
+  ParseOptions,
+  ParseWarningHandler,
+  TodoRecord,
+} from "./types.ts";
 
 const PRIORITY_PATTERN = /^\(([A-Z])\) /;
 const LEADING_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})(?: |$)/;
@@ -50,6 +54,25 @@ function warnInvalidDate(
 }
 
 /**
+ * Accept either a {@link ParseWarningHandler} (deprecated) or
+ * {@link ParseOptions} as the second argument.
+ */
+function normalizeParseOptions(
+  onWarningOrOptions?: ParseWarningHandler | ParseOptions,
+): ParseOptions {
+  if (typeof onWarningOrOptions === "function") {
+    return { onWarning: onWarningOrOptions };
+  }
+
+  return onWarningOrOptions ?? {};
+}
+
+/** Remove one trailing `\r`, so `raw` has no carriage return for CRLF input. */
+function stripTrailingCarriageReturn(line: string): string {
+  return line.endsWith("\r") ? line.slice(0, -1) : line;
+}
+
+/**
  * Parse a single todo.txt line directly into a JSON-friendly {@link TodoRecord}.
  *
  * The parser follows the todo.txt format rules:
@@ -63,13 +86,27 @@ function warnInvalidDate(
  * - Projects, contexts, and `key:value` metadata may appear anywhere in the
  *   remaining text.
  *
- * Recoverable issues are reported to `onWarning` when supplied; parsing still
- * produces a record.
+ * Recoverable issues are reported to `options.onWarning` when supplied;
+ * parsing still produces a record.
+ *
+ * With `options.includeSource`, the record carries `raw` (the exact input
+ * line, minus a trailing `\r`) and `line` (the number supplied via
+ * `options.line`, when given).
  */
 export function parseLine(
   line: string,
-  onWarning?: ParseWarningHandler,
+  options?: ParseOptions,
+): TodoRecord;
+/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. */
+export function parseLine(
+  line: string,
+  onWarning: ParseWarningHandler,
+): TodoRecord;
+export function parseLine(
+  line: string,
+  onWarningOrOptions?: ParseWarningHandler | ParseOptions,
 ): TodoRecord {
+  const options = normalizeParseOptions(onWarningOrOptions);
   let rest = line;
   let completed = false;
   let priority: string | null = null;
@@ -90,11 +127,11 @@ export function parseLine(
         createdAt = createdDate.date;
         rest = createdDate.rest;
       } else if (createdDate.kind === "invalid") {
-        warnInvalidDate(createdDate.value, "createdAt", onWarning);
+        warnInvalidDate(createdDate.value, "createdAt", options.onWarning);
       }
     } else if (completedDate.kind === "invalid") {
       // The same token cannot also be a creation date, so only warn once.
-      warnInvalidDate(completedDate.value, "completedAt", onWarning);
+      warnInvalidDate(completedDate.value, "completedAt", options.onWarning);
     }
   } else {
     const priorityMatch = PRIORITY_PATTERN.exec(rest);
@@ -108,14 +145,17 @@ export function parseLine(
       createdAt = createdDate.date;
       rest = createdDate.rest;
     } else if (createdDate.kind === "invalid") {
-      warnInvalidDate(createdDate.value, "createdAt", onWarning);
+      warnInvalidDate(createdDate.value, "createdAt", options.onWarning);
     }
   }
 
   const text = rest.trim();
-  const { description, projects, contexts, data } = parseText(text, onWarning);
+  const { description, projects, contexts, data } = parseText(
+    text,
+    options.onWarning,
+  );
 
-  return {
+  const record: TodoRecord = {
     completed,
     priority,
     completedAt,
@@ -125,6 +165,16 @@ export function parseLine(
     contexts,
     data,
   };
+
+  if (options.includeSource) {
+    if (options.line !== undefined) {
+      record.line = options.line;
+    }
+
+    record.raw = stripTrailingCarriageReturn(line);
+  }
+
+  return record;
 }
 
 /**
@@ -133,11 +183,25 @@ export function parseLine(
  * Lines are split on `\n` or `\r\n`; blank and whitespace-only lines are
  * skipped. Every remaining line becomes a {@link TodoRecord}. Warnings are
  * annotated with the 1-based physical line number.
+ *
+ * With `options.includeSource`, every record carries `raw` (the exact line,
+ * minus a trailing `\r`) and `line` (the 1-based physical line number,
+ * counting blank lines).
  */
 export function parseDocument(
   contents: string,
-  onWarning?: ParseWarningHandler,
+  options?: ParseOptions,
+): TodoRecord[];
+/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. */
+export function parseDocument(
+  contents: string,
+  onWarning: ParseWarningHandler,
+): TodoRecord[];
+export function parseDocument(
+  contents: string,
+  onWarningOrOptions?: ParseWarningHandler | ParseOptions,
 ): TodoRecord[] {
+  const { includeSource, onWarning } = normalizeParseOptions(onWarningOrOptions);
   const records: TodoRecord[] = [];
   let lineNumber = 0;
 
@@ -146,12 +210,13 @@ export function parseDocument(
 
     if (line.trim() !== "") {
       records.push(
-        parseLine(
-          line,
-          onWarning
+        parseLine(line, {
+          includeSource,
+          line: lineNumber,
+          onWarning: onWarning
             ? (warning) => onWarning({ ...warning, line: lineNumber })
             : undefined,
-        ),
+        }),
       );
     }
   }

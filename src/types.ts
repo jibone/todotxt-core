@@ -48,6 +48,21 @@ export interface ParseWarning {
 export type ParseWarningHandler = (warning: ParseWarning) => void;
 
 /**
+ * Options for {@link parseLine} and {@link parseDocument}.
+ */
+export interface ParseOptions {
+  /** Include `line` and `raw` on returned records. Default: `false`. */
+  includeSource?: boolean;
+  /**
+   * 1-based line number attached to the record when {@link includeSource} is
+   * on. Ignored by {@link parseDocument}, which numbers physical lines itself.
+   */
+  line?: number;
+  /** Receives parse warnings. */
+  onWarning?: ParseWarningHandler;
+}
+
+/**
  * Callbacks supplied by the consumer.
  *
  * The library itself never touches the filesystem. `read` is used by
@@ -68,11 +83,22 @@ export interface TodoHooks {
 export type TodoFileHooks = TodoHooks;
 
 /**
+ * Options for creating a todo.txt client with {@link createTodoTxt}.
+ *
+ * Extends the file hooks with client behaviour switches.
+ */
+export interface TodoClientOptions extends TodoHooks {
+  /** Include `line` and `raw` on every record. Default: `false`. */
+  includeSource?: boolean;
+}
+
+/**
  * A single todo.txt line parsed into a JSON-friendly record.
  *
  * This is the only parsed representation. Inline metadata is separated out of
- * {@link TodoRecord.description} into dedicated fields, and the original raw
- * line is not retained.
+ * {@link TodoRecord.description} into dedicated fields. The original line is
+ * not retained unless the caller opts in with `includeSource`, which adds the
+ * {@link TodoRecord.line} and {@link TodoRecord.raw} source fields.
  */
 export interface TodoRecord {
   /** True when the line starts with `x ` (lowercase and followed by a space). */
@@ -105,4 +131,20 @@ export interface TodoRecord {
    * If a key appears more than once, the last value wins.
    */
   data: Record<string, string>;
+  /**
+   * 1-based physical line number in the source document.
+   *
+   * Present only when parsing with `includeSource`. For a whole document it
+   * counts every physical line, including blank ones. For a single line it is
+   * the number supplied via `ParseOptions.line`.
+   */
+  line?: number;
+  /**
+   * Exact original line, without a trailing newline or a trailing `\r`.
+   *
+   * Present only when parsing with `includeSource`. Leading and trailing
+   * whitespace and tag order are preserved, unlike
+   * {@link TodoRecord.description}.
+   */
+  raw?: string;
 }

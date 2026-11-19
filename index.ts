@@ -5,8 +5,10 @@ export type { TodoQuery } from "./src/query.ts";
 export type {
   LogLevel,
   MaybePromise,
+  ParseOptions,
   ParseWarning,
   ParseWarningHandler,
+  TodoClientOptions,
   TodoFileHooks,
   TodoHooks,
   TodoLogger,

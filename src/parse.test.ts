@@ -365,4 +365,98 @@ describe("parse warnings", () => {
     expect(parseLine("Task due:a due:b").data).toEqual({ due: "b" });
     expect(parseDocument("Task due:a due:b")).toHaveLength(1);
   });
+
+  test("accepts onWarning through the options object", () => {
+    const warnings: ParseWarning[] = [];
+    const item = parseLine("Task due:2010-01-02 due:2010-02-02", {
+      onWarning: (warning) => warnings.push(warning),
+    });
+
+    expect(item.data).toEqual({ due: "2010-02-02" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.line).toBeUndefined();
+  });
+
+  test("combines includeSource with onWarning", () => {
+    const warnings: ParseWarning[] = [];
+    const items = parseDocument("Task due:a due:b\n\n(A) Second", {
+      includeSource: true,
+      onWarning: (warning) => warnings.push(warning),
+    });
+
+    expect(items.map((item) => item.line)).toEqual([1, 3]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.line).toBe(1);
+  });
+});
+
+describe("source metadata", () => {
+  test("omits line and raw by default", () => {
+    const item = parseLine("(A) Call Mom");
+
+    expect(item).not.toHaveProperty("line");
+    expect(item).not.toHaveProperty("raw");
+  });
+
+  test("parseLine includes the exact raw line", () => {
+    const item = parseLine("(A)   Call Mom   +Family", {
+      includeSource: true,
+    });
+
+    expect(item.raw).toBe("(A)   Call Mom   +Family");
+    expect(item).not.toHaveProperty("line");
+  });
+
+  test("parseLine attaches a caller-supplied line number", () => {
+    const item = parseLine("(A) Call Mom", { includeSource: true, line: 7 });
+
+    expect(item.line).toBe(7);
+    expect(item.raw).toBe("(A) Call Mom");
+  });
+
+  test("parseLine ignores a line number without includeSource", () => {
+    const item = parseLine("(A) Call Mom", { line: 7 });
+
+    expect(item).not.toHaveProperty("line");
+    expect(item).not.toHaveProperty("raw");
+  });
+
+  test("parseLine strips a trailing carriage return from raw", () => {
+    const item = parseLine("(A) Call Mom\r", { includeSource: true });
+
+    expect(item.raw).toBe("(A) Call Mom");
+  });
+
+  test("parseDocument numbers records by physical line", () => {
+    const items = parseDocument("a\n\nb", { includeSource: true });
+
+    expect(items.map((item) => item.line)).toEqual([1, 3]);
+    expect(items.map((item) => item.raw)).toEqual(["a", "b"]);
+  });
+
+  test("parseDocument keeps raw exact while normalizing the description", () => {
+    const items = parseDocument("  (A) Call   Mom  ", { includeSource: true });
+
+    expect(items[0]?.raw).toBe("  (A) Call   Mom  ");
+    expect(items[0]?.description).toBe("(A) Call Mom");
+  });
+
+  test("parseDocument raw has no trailing carriage return for CRLF input", () => {
+    const items = parseDocument("(A) Call Mom\r\nx 2011-03-03 Done\r\n", {
+      includeSource: true,
+    });
+
+    expect(items.map((item) => item.raw)).toEqual([
+      "(A) Call Mom",
+      "x 2011-03-03 Done",
+    ]);
+  });
+
+  test("parseDocument omits source fields by default", () => {
+    const items = parseDocument("(A) Call Mom");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).not.toHaveProperty("line");
+    expect(items[0]).not.toHaveProperty("raw");
+  });
 });

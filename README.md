@@ -55,7 +55,8 @@ const todos = createTodoTxt({
 
 `write` is optional until the write APIs are implemented, so read-only clients
 can omit it. `logger` is optional too and silent when omitted; see
-[Logging](#logging). The runnable Node version is
+[Logging](#logging). `includeSource` is optional as well; see
+[Source metadata](#source-metadata). The runnable Node version is
 [`examples/node/todo-all.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/node/todo-all.ts).
 
 `all()` returns a `TodoRecord` for each non-empty line:
@@ -70,6 +71,8 @@ can omit it. `logger` is optional too and silent when omitted; see
 | `projects`    | Projects without the `+` prefix                                     |
 | `contexts`    | Contexts without the `@` prefix                                     |
 | `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                      |
+| `line`        | 1-based physical line number, when `includeSource` is on            |
+| `raw`         | Exact original line, when `includeSource` is on                     |
 
 If a `key:value` key appears more than once, the last value wins. With a
 [logger](#logging) configured, the parser also emits a `warn` for each duplicate
@@ -78,6 +81,35 @@ key.
 See [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md)
 for the complete rule-by-rule interpretation, including date validation and
 deliberate leniencies.
+
+### Source metadata
+
+By default records stay JSON-lean and the original line is not retained. Pass
+`includeSource` to opt into source metadata: every record then carries `line`,
+the 1-based physical line number (blank lines count), and `raw`, the exact
+original line without a trailing newline or `\r`.
+
+```ts
+const todos = createTodoTxt({
+  read: () => Bun.file("todo.txt").text(),
+  includeSource: true,
+});
+
+for (const todo of await todos.pending()) {
+  console.log(todo.line, todo.raw);
+}
+```
+
+Source fields survive filters, plucks, and the cache-protecting copies that
+queries return. The same option works for the standalone parser:
+
+```ts
+parseDocument(contents, { includeSource: true });
+parseLine("(A) Call Mom", { includeSource: true, line: 7 });
+```
+
+`parseLine` only attaches `line` when you supply it via `ParseOptions.line`;
+`parseDocument` numbers lines itself.
 
 ## Querying
 
@@ -224,10 +256,13 @@ const record = parseLine("(A) Call Mom +Family @phone due:2011-03-05");
 const records = parseDocument(contents);
 ```
 
-`parseLine` returns a `TodoRecord` directly. The original raw line is not
-retained. Dates must be real calendar dates in `YYYY-MM-DD` form; a shape-valid
-but nonexistent date such as `2011-99-99` is treated as text and reported as an
-`invalid-date` warning. The full rule-by-rule interpretation is documented in
+`parseLine` returns a `TodoRecord` directly. Records keep no copy of the
+original line unless [source metadata](#source-metadata) is enabled. Dates must
+be real calendar dates in `YYYY-MM-DD` form; a shape-valid but nonexistent date
+such as `2011-99-99` is treated as text and reported as an `invalid-date`
+warning. Collect warnings by passing `onWarning` in a `ParseOptions` object;
+passing the handler directly as the second argument is deprecated but still
+supported. The full rule-by-rule interpretation is documented in
 [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
 Writing is not implemented yet. The `write` hook is optional for now and will
@@ -242,6 +277,7 @@ bun examples/todo-context.ts
 bun examples/todo-cross.ts
 bun examples/todo-logger.ts
 bun examples/todo-try.ts
+bun examples/todo-source.ts
 ```
 
 Each format rule also has a runnable example:
