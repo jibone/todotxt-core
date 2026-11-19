@@ -232,9 +232,10 @@ Task due:2010-01-02 due:2010-02-02
 
 ## Warnings
 
-Warnings are non-fatal: a `TodoRecord` is always returned. Pass `onWarning` to
-`parseLine` or `parseDocument` to receive them; `parseDocument` adds the 1-based
-physical line number.
+Warnings are non-fatal: a `TodoRecord` is always returned. Pass `onWarning` in
+a `ParseOptions` object to `parseLine` or `parseDocument` to receive them;
+`parseDocument` adds the 1-based physical line number. Passing the handler
+directly as the second argument is deprecated but still supported.
 
 | Code | Meaning | Record effect |
 | --- | --- | --- |
@@ -261,8 +262,13 @@ creation date.
 - **Whitespace in the description is normalized.** Tags and metadata are
   removed, and the remaining tokens are rejoined with single spaces. Leading and
   trailing whitespace is dropped.
-- **The raw line is not retained.** `TodoRecord` is a JSON-friendly projection,
-  so writing back an exact original line is not possible.
+- **Source metadata is opt-in.** By default `TodoRecord` is a JSON-friendly
+  projection and the original line is not retained. Pass
+  `{ includeSource: true }` to `parseLine`, `parseDocument`, or `createTodoTxt`
+  to attach `line` (the 1-based physical line number, counting blank lines) and
+  `raw` (the exact line, without a trailing newline or `\r`) to every record.
+  For `parseLine`, the line number comes from the caller via
+  `ParseOptions.line`.
 - **Blank lines are skipped.** `parseDocument` ignores empty and
   whitespace-only lines, and handles both `\n` and `\r\n`.
 - **Completed tasks can have an empty description.** `x ` alone is complete with

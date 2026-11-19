@@ -4,7 +4,9 @@ import type { ParseWarning } from "../../index.ts";
 /** Print the parsed record and any warnings for a single todo.txt line. */
 export function show(line: string): void {
   const warnings: ParseWarning[] = [];
-  const record = parseLine(line, (warning) => warnings.push(warning));
+  const record = parseLine(line, {
+    onWarning: (warning) => warnings.push(warning),
+  });
 
   console.log(`\n"${line}"`);
   console.log(JSON.stringify(record, null, 2));

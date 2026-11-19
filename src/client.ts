@@ -2,7 +2,11 @@ import { cloneRecords } from "./clone.ts";
 import { parseDocument } from "./parse.ts";
 import { createTodoQuery } from "./query.ts";
 import type { TodoQuery } from "./query.ts";
-import type { TodoHooks, TodoLogger, TodoRecord } from "./types.ts";
+import type {
+  TodoClientOptions,
+  TodoLogger,
+  TodoRecord,
+} from "./types.ts";
 
 /** The read interface returned by {@link createTodoTxt}. */
 export interface TodoTxtClient {
@@ -25,10 +29,12 @@ export interface TodoTxtClient {
 /**
  * Create a todo.txt client backed by consumer-supplied file hooks.
  *
- * The library performs no IO of its own: `hooks.read` is responsible for
- * producing the file contents and `hooks.write` will be used by the write APIs
- * once they are implemented. `hooks.logger` is optional and silent by default;
- * when supplied, it receives read lifecycle and parse warning diagnostics.
+ * The library performs no IO of its own: `options.read` is responsible for
+ * producing the file contents and `options.write` will be used by the write
+ * APIs once they are implemented. `options.logger` is optional and silent by
+ * default; when supplied, it receives read lifecycle and parse warning
+ * diagnostics. With `options.includeSource`, every record also carries the
+ * 1-based `line` number and the exact `raw` line it was parsed from.
  *
  * Parsed records are cached in memory per client. The first query loads and
  * parses the file; later queries reuse that snapshot. {@link TodoTxtClient.all}
@@ -42,12 +48,12 @@ export interface TodoTxtClient {
  * Returned records are copies, so callers may mutate them without affecting the
  * cache.
  */
-export function createTodoTxt(hooks: TodoHooks): TodoTxtClient {
+export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
   let cache: TodoRecord[] | undefined;
   let inFlight: Promise<TodoRecord[]> | undefined;
   let generation = 0;
 
-  const logger = hooks.logger;
+  const logger = options.logger;
 
   const log: TodoLogger = (level, message, meta) => {
     if (!logger) {
@@ -72,13 +78,16 @@ export function createTodoTxt(hooks: TodoHooks): TodoTxtClient {
     const currentGeneration = ++generation;
 
     log("debug", "Reading todo file");
-    const contents = await hooks.read();
-    const records = parseDocument(contents, (warning) => {
-      log("warn", warning.message, {
-        ...warning.meta,
-        code: warning.code,
-        line: warning.line,
-      });
+    const contents = await options.read();
+    const records = parseDocument(contents, {
+      includeSource: options.includeSource,
+      onWarning: (warning) => {
+        log("warn", warning.message, {
+          ...warning.meta,
+          code: warning.code,
+          line: warning.line,
+        });
+      },
     });
     log("debug", "Parsed todo file", { records: records.length });
 

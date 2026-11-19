@@ -284,6 +284,98 @@ describe("in-memory cache", () => {
   });
 });
 
+describe("includeSource", () => {
+  test("adds line and raw to every record", async () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom @phone\n\nx 2011-03-03 Done +Chores\n",
+      includeSource: true,
+    });
+
+    expect(await todos.all()).toEqual([
+      {
+        completed: false,
+        priority: "A",
+        completedAt: null,
+        createdAt: null,
+        description: "Call Mom",
+        projects: [],
+        contexts: ["phone"],
+        data: {},
+        line: 1,
+        raw: "(A) Call Mom @phone",
+      },
+      {
+        completed: true,
+        priority: null,
+        completedAt: "2011-03-03",
+        createdAt: null,
+        description: "Done",
+        projects: ["Chores"],
+        contexts: [],
+        data: {},
+        line: 3,
+        raw: "x 2011-03-03 Done +Chores",
+      },
+    ]);
+  });
+
+  test("records omit source fields by default", async () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom",
+      write: () => {},
+    });
+
+    const records = await todos.all();
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).not.toHaveProperty("line");
+    expect(records[0]).not.toHaveProperty("raw");
+  });
+
+  test("queries preserve line and raw", async () => {
+    const todos = createTodoTxt({
+      read: () =>
+        [
+          "(A) Call Mom +Family @phone",
+          "x 2011-03-03 Done +Chores",
+          "(B) Schedule Goodwill pickup +GarageSale",
+        ].join("\n"),
+      includeSource: true,
+    });
+
+    const pending = await todos.pending();
+
+    expect(pending.map((record) => record.line)).toEqual([1, 3]);
+    expect(pending.map((record) => record.raw)).toEqual([
+      "(A) Call Mom +Family @phone",
+      "(B) Schedule Goodwill pickup +GarageSale",
+    ]);
+
+    expect((await todos.completed())[0]).toMatchObject({
+      line: 2,
+      raw: "x 2011-03-03 Done +Chores",
+    });
+    expect((await todos.project("GarageSale"))[0]).toMatchObject({ line: 3 });
+    expect((await todos.context("phone"))[0]).toMatchObject({ line: 1 });
+  });
+
+  test("source fields on returned records cannot mutate the cache", async () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom",
+      includeSource: true,
+    });
+
+    const first = await todos.all();
+    first[0]!.line = 99;
+    first[0]!.raw = "tampered";
+
+    const second = await todos.pending();
+
+    expect(second[0]?.line).toBe(1);
+    expect(second[0]?.raw).toBe("(A) Call Mom");
+  });
+});
+
 describe("logger", () => {
   test("is silent by default", async () => {
     const todos = createTodoTxt({

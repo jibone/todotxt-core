@@ -480,3 +480,42 @@ describe("asynchronous hooks", () => {
     ).toEqual(["Pending"]);
   });
 });
+
+describe("source metadata", () => {
+  function createSourceClient(contents: string): TodoTxtClient {
+    return createTodoTxt({
+      read: () => contents,
+      write: () => {},
+      includeSource: true,
+    });
+  }
+
+  test("filters and chains preserve line and raw", async () => {
+    const todos = createSourceClient(
+      [
+        "(A) Thank Mom for the meatballs @phone",
+        "",
+        "x 2011-03-03 2011-03-01 Review Tim's pull request +TodoTxtTouch @github",
+        "(B) Schedule Goodwill pickup +GarageSale @phone",
+      ].join("\n"),
+    );
+
+    const phone = await todos.context("phone");
+
+    expect(phone.map((record) => [record.line, record.raw])).toEqual([
+      [1, "(A) Thank Mom for the meatballs @phone"],
+      [4, "(B) Schedule Goodwill pickup +GarageSale @phone"],
+    ]);
+
+    expect(
+      (await todos.pending().project("GarageSale")).map((record) => record.line),
+    ).toEqual([4]);
+
+    expect(await todos.completed()).toEqual([
+      expect.objectContaining({
+        line: 3,
+        raw: "x 2011-03-03 2011-03-01 Review Tim's pull request +TodoTxtTouch @github",
+      }),
+    ]);
+  });
+});
