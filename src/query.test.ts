@@ -519,3 +519,443 @@ describe("source metadata", () => {
     ]);
   });
 });
+
+describe("priority filters", () => {
+  test("lists every record with one priority in file order", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.priority("A"))).toEqual([
+      "Thank Mom for the meatballs",
+      "Buy paint",
+      "Plant tomatoes",
+    ]);
+  });
+
+  test("an array matches any listed priority", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.priority(["A", "C"]))).toEqual([
+      "Thank Mom for the meatballs",
+      "Buy paint",
+      "Pack kitchen",
+      "Plant tomatoes",
+    ]);
+  });
+
+  test("matching is exact, so a lowercase letter matches nothing", async () => {
+    const todos = createClient();
+
+    expect(await todos.priority("a")).toEqual([]);
+    expect(descriptions(await todos.priority(["a", "A"]))).toEqual(
+      descriptions(await todos.priority("A")),
+    );
+  });
+
+  test("repeated priority filters intersect", async () => {
+    const todos = createClient();
+
+    expect(await todos.priority("A").priority("B")).toEqual([]);
+    expect(descriptions(await todos.priority(["A", "B"]).priority("B"))).toEqual(
+      descriptions(await todos.priority("B")),
+    );
+  });
+
+  test("composes with status and project filters", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.pending().priority("A"))).toEqual(
+      descriptions(await todos.priority("A")),
+    );
+    expect(await todos.completed().priority("A")).toEqual([]);
+    expect(descriptions(await todos.priority("A").project("Garden"))).toEqual([
+      "Plant tomatoes",
+    ]);
+  });
+});
+
+describe("search filters", () => {
+  test("matches substrings in the description case-insensitively by default", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.search("PR"))).toEqual([
+      "Review PR",
+      "Merge PR",
+    ]);
+    expect(descriptions(await todos.search("mom"))).toEqual([
+      "Thank Mom for the meatballs",
+    ]);
+  });
+
+  test("can match case-sensitively", async () => {
+    const todos = createClient();
+
+    expect(await todos.search("pr", { caseSensitive: true })).toEqual([]);
+    expect(descriptions(await todos.search("Mom", { caseSensitive: true }))).toEqual([
+      "Thank Mom for the meatballs",
+    ]);
+  });
+
+  test("searches only the description, not metadata or dates", async () => {
+    const todos = createClient();
+
+    // `2011-03-05` appears as a leading date on line 4 and as the `due`
+    // value, but neither survives into the description.
+    expect(await todos.search("2011-03-05")).toEqual([]);
+    expect(descriptions(await todos.search("2+2"))).toEqual([
+      "Learn how to add 2+2",
+    ]);
+  });
+
+  test("an empty needle matches every record", async () => {
+    const todos = createClient();
+
+    expect(await todos.search("")).toHaveLength(19);
+  });
+
+  test("composes with other filters", async () => {
+    const todos = createClient();
+
+    expect(
+      descriptions(await todos.project("GarageSale").search("sign")),
+    ).toEqual(["Post signs around the neighborhood"]);
+    expect(
+      descriptions(await todos.completed().search("PR")),
+    ).toEqual(["Merge PR"]);
+  });
+});
+
+describe("metadata filters", () => {
+  test("meta(key) matches presence regardless of value", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.meta("due"))).toEqual([
+      "Document task format",
+    ]);
+    expect(await todos.meta("missing")).toEqual([]);
+  });
+
+  test("meta(key, value) matches the exact value", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.meta("due", "2011-03-05"))).toEqual([
+      "Document task format",
+    ]);
+    expect(await todos.meta("due", "2011-03-06")).toEqual([]);
+  });
+
+  test("hasMeta is the readable presence check", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.hasMeta("due"))).toEqual(
+      descriptions(await todos.meta("due")),
+    );
+    expect(await todos.hasMeta("missing")).toEqual([]);
+  });
+
+  test("composes with other filters", async () => {
+    const todos = createClient([
+      "(A) Call Mom who:alice",
+      "Email Bob at bob@example.com who:bob",
+      "Plain task",
+    ].join("\n"));
+
+    expect(descriptions(await todos.meta("who", "bob"))).toEqual([
+      "Email Bob at bob@example.com",
+    ]);
+    expect(descriptions(await todos.pending().hasMeta("who"))).toEqual([
+      "Call Mom",
+      "Email Bob at bob@example.com",
+    ]);
+  });
+});
+
+describe("negation filters", () => {
+  test("lists every record not tagged with the project", async () => {
+    const todos = createClient();
+
+    expect(await todos.notProject("Garden")).toHaveLength(17);
+    expect(descriptions(await todos.notProject("Garden").search("tomatoes"))).toEqual(
+      [],
+    );
+  });
+
+  test("lists every record not tagged with the context", async () => {
+    const todos = createClient();
+
+    expect(await todos.notContext("phone")).toHaveLength(16);
+    expect(descriptions(await todos.notContext("phone").search("paint"))).toEqual([
+      "Buy paint",
+    ]);
+  });
+
+  test("an array excludes every listed name", async () => {
+    const todos = createClient();
+
+    expect(await todos.notProject(["Garden", "Moving"])).toHaveLength(15);
+  });
+
+  test("repeated negation filters intersect", async () => {
+    const todos = createClient();
+
+    expect(
+      await todos.notProject("Garden").notProject("Moving"),
+    ).toHaveLength(15);
+  });
+
+  test("composes with other filters", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().notProject("Garden")).toHaveLength(10);
+  });
+
+  test("an empty array excludes nothing", async () => {
+    const todos = createClient();
+
+    expect(await todos.notProject([])).toHaveLength(19);
+  });
+
+  test("honors the per-call case-insensitive option", async () => {
+    const todos = createClient();
+
+    expect(await todos.notProject("garden")).toHaveLength(19);
+    expect(
+      await todos.notProject("garden", { caseSensitive: false }),
+    ).toHaveLength(17);
+  });
+});
+
+describe("array arguments", () => {
+  test("a project array matches records in any listed project", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.project(["Garden", "Moving"]))).toEqual([
+      "Order moving boxes",
+      "Pack kitchen",
+      "Plant tomatoes",
+      "Weed the flower bed",
+    ]);
+  });
+
+  test("a context array matches records in any listed context", async () => {
+    const todos = createClient();
+
+    expect(await todos.context(["phone", "computer"])).toHaveLength(7);
+    expect(await todos.context(["phone", "Missing"])).toHaveLength(3);
+  });
+
+  test("repeated filters still require every name", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.project("TodoTxt").project("OpenSource"))).toEqual([
+      "Write parser tests",
+      "Publish v0.1",
+    ]);
+    expect(
+      descriptions(await todos.project(["TodoTxt", "OpenSource"]).project("TodoTxt")),
+    ).toEqual([
+      "Document task format",
+      "Update README",
+      "Write parser tests",
+      "Publish v0.1",
+    ]);
+  });
+
+  test("an empty array matches nothing", async () => {
+    const todos = createClient();
+
+    expect(await todos.project([])).toEqual([]);
+    expect(await todos.context([]).pending()).toEqual([]);
+  });
+});
+
+describe("case-insensitive name matching", () => {
+  test("per-call option overrides the exact default", async () => {
+    const todos = createClient();
+
+    expect(await todos.project("garden")).toEqual([]);
+    expect(
+      descriptions(await todos.project("garden", { caseSensitive: false })),
+    ).toEqual(["Plant tomatoes", "Weed the flower bed"]);
+    expect(await todos.context("COMPUTER", { caseSensitive: false })).toHaveLength(4);
+  });
+
+  test("client-level option changes the default for name queries", async () => {
+    const todos = createTodoTxt({
+      read: () => CONTENTS,
+      write: () => {},
+      caseSensitive: false,
+    });
+
+    expect(await todos.project("todotxt")).toHaveLength(4);
+    expect(await todos.context("Computer")).toHaveLength(4);
+  });
+
+  test("per-call option re-enables exact matching on a client-level match", async () => {
+    const todos = createTodoTxt({
+      read: () => CONTENTS,
+      write: () => {},
+      caseSensitive: false,
+    });
+
+    expect(await todos.project("todotxt", { caseSensitive: true })).toEqual([]);
+    expect(await todos.project("TodoTxt", { caseSensitive: true })).toHaveLength(4);
+  });
+
+  test("name plucks preserve original casing", async () => {
+    const todos = createTodoTxt({
+      read: () => CONTENTS,
+      write: () => {},
+      caseSensitive: false,
+    });
+
+    expect(await todos.projects()).toEqual([
+      "GarageSale",
+      "Garden",
+      "Moving",
+      "OpenSource",
+      "TodoTxt",
+      "TodoTxtTouch",
+    ]);
+  });
+});
+
+describe("date filters", () => {
+  test("createdAfter matches strictly later creation dates", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.createdAfter("2011-03-01"))).toEqual([
+      "Document task format",
+      "Write parser tests",
+    ]);
+    expect(descriptions(await todos.createdAfter("2011-03-02"))).toEqual([
+      "Write parser tests",
+    ]);
+  });
+
+  test("createdBefore matches strictly earlier creation dates", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.createdBefore("2011-03-02"))).toEqual([
+      "Review Tim's pull request",
+      "Order moving boxes",
+    ]);
+  });
+
+  test("records without the date never match", async () => {
+    const todos = createClient();
+
+    expect(await todos.createdAfter("1900-01-01")).toHaveLength(4);
+    expect(await todos.createdBefore("9999-12-31")).toHaveLength(4);
+  });
+
+  test("completedAfter and completedBefore filter on the completion date", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.completedAfter("2024-01-12"))).toEqual([
+      "Merge PR",
+    ]);
+    expect(descriptions(await todos.completedBefore("2011-03-05"))).toEqual([
+      "Review Tim's pull request",
+      "Update README",
+    ]);
+  });
+
+  test("composes with other filters", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.pending().createdAfter("2011-01-01"))).toEqual([
+      "Document task format",
+      "Write parser tests",
+    ]);
+    expect(
+      descriptions(await todos.completed().createdBefore("2011-03-05")),
+    ).toEqual(["Review Tim's pull request", "Order moving boxes"]);
+  });
+
+  test("throws TypeError for invalid arguments without reading", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    expect(() => todos.createdAfter("2024-13-01")).toThrow(TypeError);
+    expect(() => todos.createdBefore("not-a-date")).toThrow(TypeError);
+    expect(() => todos.completedAfter("2024-02-30")).toThrow(TypeError);
+    expect(() => todos.completedBefore("2024-1-1")).toThrow(TypeError);
+    // 2024 is a leap year, so this bound is valid; 2023 is not.
+    expect(() => todos.createdAfter("2023-02-29")).toThrow(TypeError);
+
+    expect(readCalls).toBe(0);
+
+    expect(await todos.createdAfter("2024-02-29")).toHaveLength(0);
+    expect(readCalls).toBe(1);
+  });
+});
+
+describe("count and first", () => {
+  test("count() matches the length of the same query", async () => {
+    const todos = createClient();
+
+    expect(await todos.count()).toBe(19);
+    expect(await todos.pending().count()).toBe(12);
+    expect(await todos.completed().count()).toBe(7);
+    expect(await todos.project("TodoTxt").count()).toBe(4);
+    expect(await todos.project("TodoTxt").count()).toBe(
+      (await todos.project("TodoTxt")).length,
+    );
+    expect(await todos.pending().completed().count()).toBe(0);
+  });
+
+  test("count() reads once through the cache", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    await todos.project("GarageSale").count();
+
+    expect(readCalls).toBe(1);
+  });
+
+  test("first() returns the first record of the filtered result", async () => {
+    const todos = createClient();
+
+    expect((await todos.first())?.description).toBe(
+      "Thank Mom for the meatballs",
+    );
+    expect((await todos.pending().first())?.description).toBe(
+      "Thank Mom for the meatballs",
+    );
+    expect((await todos.project("GarageSale").first())?.description).toBe(
+      "Schedule Goodwill pickup",
+    );
+  });
+
+  test("first() resolves to undefined when nothing matches", async () => {
+    const todos = createClient();
+
+    expect(await todos.project("Missing").first()).toBeUndefined();
+    expect(await todos.pending().completed().first()).toBeUndefined();
+  });
+
+  test("first() returns a copy that cannot mutate the cache", async () => {
+    const todos = createClient();
+
+    const first = await todos.first();
+    first!.description = "Changed";
+    first!.projects.push("Other");
+
+    expect((await todos.first())?.description).toBe(
+      "Thank Mom for the meatballs",
+    );
+    expect((await todos.first())?.projects).toEqual([]);
+  });
+});

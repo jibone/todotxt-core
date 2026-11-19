@@ -6,9 +6,18 @@
 Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). There is no separate `TodoItem`/raw representation; the optional `line`/`raw` source fields are attached to records only when the caller opts in with `includeSource` (parser `ParseOptions` or client `TodoClientOptions`). `createTodoTxt()` returns a lazy, chainable query API over parsed records:
 
 - `all()`, `pending()`, `completed()`, `project(name)`, `context(name)`
+- `notProject(name)`, `notContext(name)`, `priority(letter)`, `search(text)`,
+  `meta(key, value?)`, `hasMeta(key)`, and the `createdAfter`/`createdBefore`/
+  `completedAfter`/`completedBefore` date filters
+- `sortBy(field, direction?)`, `count()`, and `first()`
 - `projects()` and `contexts()` pluck unique, alphabetically sorted names
 
-Filters compose sequentially, and the client caches the parsed records. The first query reads the file; later queries reuse that snapshot, and `all()` always reloads and refreshes the cache.
+Filters compose sequentially (AND across calls, OR for array arguments), the
+sort step is stable with nulls last in both directions, and the client caches
+the parsed records. The first query reads the file; later queries reuse that
+snapshot, and `all()` always reloads and refreshes the cache. Name matching is
+exact and case-sensitive by default, overridable per call or client-wide via
+`caseSensitive`; `search` is independently case-insensitive by default.
 
 The package is published to npm as `@jibone/todotxt-core`. It is ESM-only, built
 with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
@@ -19,7 +28,7 @@ with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
 - Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-try.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
+- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
 
 ## Gotchas
 - Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`. Update both when parser behavior changes.

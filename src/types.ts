@@ -90,6 +90,16 @@ export type TodoFileHooks = TodoHooks;
 export interface TodoClientOptions extends TodoHooks {
   /** Include `line` and `raw` on every record. Default: `false`. */
   includeSource?: boolean;
+  /**
+   * Default matching behavior for project and context queries, including
+   * their negations. Default: `true` (exact, case-sensitive).
+   *
+   * When `false`, names are compared with `toLowerCase()`, which is
+   * deterministic across machines and locales but not full Unicode case
+   * folding. Search is unaffected: it is case-insensitive by default. Name
+   * plucks such as `projects()` always preserve original casing.
+   */
+  caseSensitive?: boolean;
 }
 
 /**
