@@ -236,6 +236,8 @@ Warnings are non-fatal: a `TodoRecord` is always returned. Pass `onWarning` in
 a `ParseOptions` object to `parseLine` or `parseDocument` to receive them;
 `parseDocument` adds the 1-based physical line number. Passing the handler
 directly as the second argument is deprecated but still supported.
+`parseDocumentResult` returns the records, the warnings in document order, and
+the line counts together as data.
 
 | Code | Meaning | Record effect |
 | --- | --- | --- |
@@ -271,5 +273,7 @@ creation date.
   `ParseOptions.line`.
 - **Blank lines are skipped.** `parseDocument` ignores empty and
   whitespace-only lines, and handles both `\n` and `\r\n`.
+  `parseDocumentResult` counts them in `skippedLines`; its `lineCount` treats a
+  trailing newline as ending the last line rather than starting an empty one.
 - **Completed tasks can have an empty description.** `x ` alone is complete with
   `description: ""`; a date-only line such as `(A) 2011-03-02` is valid too.

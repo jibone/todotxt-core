@@ -16,6 +16,13 @@ Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). The
   counts alone. A record tagged with several names counts once per name, so
   per-name totals do not sum to the summary total.
 
+Warnings are available as data: `parseDocumentResult()` returns the records
+plus warnings (document order, 1-based lines), `lineCount`, and `skippedLines`;
+a client's `warnings()` exposes the most recent successful read's warnings as
+copies. Read-hook rejections propagate untouched when they are `Error`
+instances; other rejected values are wrapped in `TodoReadError` with the
+original on `cause`.
+
 Filters compose sequentially (AND across calls, OR for array arguments), the
 sort step is stable with nulls last in both directions, and the client caches
 the parsed records. The first query reads the file; later queries reuse that
@@ -32,7 +39,7 @@ with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
 - Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
+- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-warnings.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
 
 ## Gotchas
 - Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`. Update both when parser behavior changes.

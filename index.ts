@@ -1,6 +1,7 @@
 export { createTodoTxt } from "./src/client.ts";
 export type { TodoTxtClient } from "./src/client.ts";
-export { parseDocument, parseLine } from "./src/parse.ts";
+export { TodoReadError } from "./src/errors.ts";
+export { parseDocument, parseDocumentResult, parseLine } from "./src/parse.ts";
 export type {
   TodoCount,
   TodoMatchOptions,
@@ -14,6 +15,7 @@ export type {
   LogLevel,
   MaybePromise,
   ParseOptions,
+  ParseResult,
   ParseWarning,
   ParseWarningHandler,
   TodoClientOptions,

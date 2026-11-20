@@ -403,6 +403,72 @@ logged as `error`; the other levels are reserved for the write APIs. Logging is
 best-effort: a logger that throws or rejects never breaks a read or query. See
 `examples/todo-logger.ts`.
 
+Warnings are also available without a logger, as data; see
+[Warnings and errors as data](#warnings-and-errors-as-data).
+
+## Warnings and errors as data
+
+`onWarning` callbacks and the [logger](#logging) are not the only way to learn
+what was wrong with a file. `parseDocumentResult` returns the same records as
+`parseDocument` plus the warnings and line counts as data:
+
+```ts
+import { parseDocumentResult } from "@jibone/todotxt-core";
+
+const result = parseDocumentResult(contents);
+// {
+//   records: TodoRecord[],
+//   warnings: [
+//     { code: "invalid-date", message: "...", line: 3, meta: { ... } },
+//     { code: "duplicate-metadata-key", message: "...", line: 4, meta: { ... } },
+//   ],
+//   lineCount: 4,     // physical lines; a trailing newline adds none
+//   skippedLines: 1,  // blank or whitespace-only lines
+// }
+```
+
+Warnings appear in document order with 1-based physical line numbers.
+`lineCount` counts physical lines — a single trailing newline ends the last
+line instead of starting an empty one, and the empty input has no lines.
+`skippedLines` counts the blank and whitespace-only lines the parser ignored.
+Warnings are still forwarded to `options.onWarning` when supplied.
+
+Clients expose the same data without hooks. `warnings()` returns the warnings
+of the most recent successful read:
+
+```ts
+const records = await todos.all();
+const warnings = todos.warnings();
+// ParseWarning[] in document order, or [] after a clean read.
+```
+
+It is an additional access path: the [logger](#logging) still receives the
+same warnings. The returned array and its warnings are copies, so callers may
+mutate them freely. A read that fails leaves the previous read's warnings in
+place, and `warnings()` returns `[]` before the first read.
+
+### Read errors
+
+Rejections from the `read` hook stay promise rejections. When the rejected
+value is already an `Error` — including filesystem errors with a `code` such
+as `ENOENT` — it propagates untouched, so existing error-code checks keep
+working. A hook that rejects with anything else (a thrown string, a plain
+object) is wrapped in a `TodoReadError` with the original value on `cause`:
+
+```ts
+import { TodoReadError } from "@jibone/todotxt-core";
+
+try {
+  await todos.all();
+} catch (error) {
+  if (error instanceof TodoReadError) {
+    // The read hook rejected with a non-Error value.
+    console.error(error.cause);
+  }
+  // A real Error (including fs errors with .code) arrives untouched.
+}
+```
+
 ## Parser
 
 The parser also works without the client wrapper:
@@ -418,9 +484,11 @@ const records = parseDocument(contents);
 original line unless [source metadata](#source-metadata) is enabled. Dates must
 be real calendar dates in `YYYY-MM-DD` form; a shape-valid but nonexistent date
 such as `2011-99-99` is treated as text and reported as an `invalid-date`
-warning. Collect warnings by passing `onWarning` in a `ParseOptions` object;
-passing the handler directly as the second argument is deprecated but still
-supported. The full rule-by-rule interpretation is documented in
+warning. Collect warnings by passing `onWarning` in a `ParseOptions` object, or
+get them back as data with
+[`parseDocumentResult`](#warnings-and-errors-as-data); passing the handler
+directly as the second argument is deprecated but still supported. The full
+rule-by-rule interpretation is documented in
 [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
 Writing is not implemented yet. The `write` hook is optional for now and will
@@ -434,10 +502,12 @@ bun examples/todo-project.ts
 bun examples/todo-context.ts
 bun examples/todo-cross.ts
 bun examples/todo-logger.ts
+bun examples/todo-warnings.ts
 bun examples/todo-try.ts
 bun examples/todo-source.ts
 bun examples/todo-filters.ts
 bun examples/todo-sort.ts
+bun examples/todo-summary.ts
 ```
 
 Each format rule also has a runnable example:

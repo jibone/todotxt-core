@@ -2,6 +2,8 @@ import { isValidDate } from "./date.ts";
 import { parseText } from "./metadata.ts";
 import type {
   ParseOptions,
+  ParseResult,
+  ParseWarning,
   ParseWarningHandler,
   TodoRecord,
 } from "./types.ts";
@@ -178,6 +180,57 @@ export function parseLine(
 }
 
 /**
+ * Shared document parser behind {@link parseDocument} and
+ * {@link parseDocumentResult}.
+ *
+ * Warnings are always collected, in document order and annotated with their
+ * 1-based physical line number, and forwarded to the consumer's `onWarning`
+ * when one is supplied. A single trailing newline ends the last line rather
+ * than starting an empty one, so it adds neither a line nor a skipped line.
+ */
+function parseDocumentCore(
+  contents: string,
+  options: ParseOptions,
+): ParseResult {
+  const { includeSource, onWarning } = options;
+  const segments = contents.split(/\r?\n/);
+  const lines =
+    contents === ""
+      ? []
+      : contents.endsWith("\n")
+        ? segments.slice(0, -1)
+        : segments;
+
+  const records: TodoRecord[] = [];
+  const warnings: ParseWarning[] = [];
+  let skippedLines = 0;
+  let lineNumber = 0;
+
+  for (const line of lines) {
+    lineNumber += 1;
+
+    if (line.trim() === "") {
+      skippedLines += 1;
+      continue;
+    }
+
+    records.push(
+      parseLine(line, {
+        includeSource,
+        line: lineNumber,
+        onWarning: (warning) => {
+          const annotated = { ...warning, line: lineNumber };
+          warnings.push(annotated);
+          onWarning?.(annotated);
+        },
+      }),
+    );
+  }
+
+  return { records, warnings, lineCount: lines.length, skippedLines };
+}
+
+/**
  * Parse the contents of a todo.txt file.
  *
  * Lines are split on `\n` or `\r\n`; blank and whitespace-only lines are
@@ -201,25 +254,29 @@ export function parseDocument(
   contents: string,
   onWarningOrOptions?: ParseWarningHandler | ParseOptions,
 ): TodoRecord[] {
-  const { includeSource, onWarning } = normalizeParseOptions(onWarningOrOptions);
-  const records: TodoRecord[] = [];
-  let lineNumber = 0;
+  return parseDocumentCore(
+    contents,
+    normalizeParseOptions(onWarningOrOptions),
+  ).records;
+}
 
-  for (const line of contents.split(/\r?\n/)) {
-    lineNumber += 1;
-
-    if (line.trim() !== "") {
-      records.push(
-        parseLine(line, {
-          includeSource,
-          line: lineNumber,
-          onWarning: onWarning
-            ? (warning) => onWarning({ ...warning, line: lineNumber })
-            : undefined,
-        }),
-      );
-    }
-  }
-
-  return records;
+/**
+ * Parse the contents of a todo.txt file, returning records, warnings, and
+ * line counts as data.
+ *
+ * The records are exactly what {@link parseDocument} returns. The
+ * {@link ParseResult} additionally carries every warning in document order
+ * (annotated with the 1-based physical line number), the number of physical
+ * lines, and how many of them were blank or whitespace-only. A single
+ * trailing newline ends the last line rather than starting an empty one, and
+ * the empty input has no lines.
+ *
+ * Warnings are also forwarded to `options.onWarning` when supplied, so this
+ * composes with existing warning handling.
+ */
+export function parseDocumentResult(
+  contents: string,
+  options?: ParseOptions,
+): ParseResult {
+  return parseDocumentCore(contents, normalizeParseOptions(options));
 }
