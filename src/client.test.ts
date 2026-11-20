@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createTodoTxt } from "./client.ts";
+import { TodoReadError } from "./errors.ts";
 import type { LogLevel, ParseWarning } from "./types.ts";
 
 interface LogCall {
@@ -410,6 +411,138 @@ describe("includeSource", () => {
   });
 });
 
+describe("warnings()", () => {
+  test("is empty before the first read", () => {
+    const todos = createTodoTxt({
+      read: () => "Task",
+    });
+
+    expect(todos.warnings()).toEqual([]);
+  });
+
+  test("exposes the most recent read's warnings in document order", async () => {
+    const todos = createTodoTxt({
+      read: () =>
+        ["(A) First", "", "Task due:a due:b", "2011-99-99 Bad date"].join("\n"),
+    });
+
+    await todos.all();
+
+    expect(
+      todos.warnings().map((warning) => [warning.code, warning.line]),
+    ).toEqual([
+      ["duplicate-metadata-key", 3],
+      ["invalid-date", 4],
+    ]);
+  });
+
+  test("populates from the first lazy query read", async () => {
+    const todos = createTodoTxt({
+      read: () => "Task due:a due:b",
+    });
+
+    await todos.pending();
+
+    expect(todos.warnings()).toHaveLength(1);
+  });
+
+  test("is empty again after a clean read", async () => {
+    let readCount = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCount += 1;
+        return readCount === 1 ? "Task due:a due:b" : "Clean task";
+      },
+    });
+
+    await todos.all();
+    expect(todos.warnings()).toHaveLength(1);
+
+    await todos.all();
+    expect(todos.warnings()).toEqual([]);
+  });
+
+  test("keeps the previous warnings when a read fails", async () => {
+    let readCount = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCount += 1;
+        if (readCount === 2) {
+          throw new Error("read failed");
+        }
+        return "Task due:a due:b";
+      },
+    });
+
+    await todos.all();
+    expect(todos.warnings()).toHaveLength(1);
+
+    await expect(todos.all()).rejects.toThrow("read failed");
+    expect(todos.warnings()).toHaveLength(1);
+  });
+
+  test("returns copies that cannot mutate the stored warnings", async () => {
+    const todos = createTodoTxt({
+      read: () => "Task due:a due:b",
+    });
+
+    await todos.all();
+
+    const warnings = todos.warnings();
+    warnings.push({ code: "invalid-date", message: "fake", meta: {} });
+    warnings[0]!.message = "tampered";
+    warnings[0]!.meta.key = "tampered";
+
+    const fresh = todos.warnings();
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]?.message).toBe(
+      'Duplicate metadata key "due"; the last value wins.',
+    );
+    expect(fresh[0]?.meta).toEqual({
+      key: "due",
+      previousValue: "a",
+      value: "b",
+    });
+  });
+
+  test("a superseded read cannot overwrite the newest warnings", async () => {
+    let readCount = 0;
+    const todos = createTodoTxt({
+      read: async () => {
+        readCount += 1;
+        if (readCount === 1) {
+          await Promise.resolve();
+          return "Task due:a due:b";
+        }
+        return "Clean task";
+      },
+    });
+
+    const stale = todos.all();
+    await todos.all();
+    await stale;
+
+    expect(todos.warnings()).toEqual([]);
+  });
+
+  test("the logger still receives warnings alongside warnings()", async () => {
+    const calls: LogCall[] = [];
+    const todos = createTodoTxt({
+      read: () => "Task due:a due:b",
+      logger: (level, message, meta) => {
+        calls.push({ level, message, meta });
+      },
+    });
+
+    await todos.all();
+
+    const warnCalls = calls.filter((call) => call.level === "warn");
+    expect(warnCalls).toHaveLength(1);
+    expect(todos.warnings()).toHaveLength(1);
+    expect(warnCalls[0]?.message).toBe(todos.warnings()[0]?.message);
+  });
+});
+
 describe("logger", () => {
   test("is silent by default", async () => {
     const todos = createTodoTxt({
@@ -540,5 +673,97 @@ describe("logger", () => {
     });
 
     expect(await todos.all()).toHaveLength(1);
+  });
+});
+
+describe("read errors", () => {
+  const capture = async (promise: Promise<unknown>): Promise<unknown> =>
+    promise.then(
+      () => new Error("expected the read to fail"),
+      (error: unknown) => error,
+    );
+
+  test("wraps a rejected string in TodoReadError", async () => {
+    const todos = createTodoTxt({
+      read: () => Promise.reject("not found"),
+    });
+
+    const failure = await capture(todos.all());
+
+    expect(failure).toBeInstanceOf(TodoReadError);
+    expect(failure).toBeInstanceOf(Error);
+    const error = failure as TodoReadError;
+    expect(error.name).toBe("TodoReadError");
+    expect(error.message).toBe(
+      "The read hook rejected with a non-Error value.",
+    );
+    expect(error.cause).toBe("not found");
+  });
+
+  test("wraps a rejected plain object and keeps it on cause", async () => {
+    const rejection = { code: 42, detail: "garage door open" };
+    const todos = createTodoTxt({
+      read: () => Promise.reject(rejection),
+    });
+
+    const failure = await capture(todos.all());
+
+    expect(failure).toBeInstanceOf(TodoReadError);
+    expect((failure as TodoReadError).cause).toBe(rejection);
+  });
+
+  test("wraps values thrown synchronously by the read hook", async () => {
+    const todos = createTodoTxt({
+      read: () => {
+        throw "sync blow-up";
+      },
+    });
+
+    const failure = await capture(todos.all());
+
+    expect(failure).toBeInstanceOf(TodoReadError);
+    expect((failure as TodoReadError).cause).toBe("sync blow-up");
+  });
+
+  test("propagates Error rejections untouched", async () => {
+    const readError = Object.assign(new Error("no such file"), {
+      code: "ENOENT",
+    });
+    const todos = createTodoTxt({
+      read: () => Promise.reject(readError),
+    });
+
+    const failure = await capture(todos.all());
+
+    expect(failure).toBe(readError);
+    expect(failure).not.toBeInstanceOf(TodoReadError);
+    expect((failure as { code?: string }).code).toBe("ENOENT");
+  });
+
+  test("lazy queries wrap non-Error rejections too", async () => {
+    const todos = createTodoTxt({
+      read: () => Promise.reject("nope"),
+    });
+
+    const failure = await capture(Promise.resolve(todos.pending()));
+
+    expect(failure).toBeInstanceOf(TodoReadError);
+  });
+
+  test("a failed non-Error read leaves the previous warnings in place", async () => {
+    let readCount = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCount += 1;
+        return readCount === 1 ? "Task due:a due:b" : Promise.reject("gone");
+      },
+    });
+
+    await todos.all();
+    expect(todos.warnings()).toHaveLength(1);
+
+    const failure = await capture(todos.all());
+    expect(failure).toBeInstanceOf(TodoReadError);
+    expect(todos.warnings()).toHaveLength(1);
   });
 });

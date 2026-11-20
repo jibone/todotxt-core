@@ -63,6 +63,30 @@ export interface ParseOptions {
 }
 
 /**
+ * The outcome of parsing a whole todo.txt document.
+ *
+ * Returned by {@link parseDocumentResult}. {@link parseDocument} returns the
+ * {@link ParseResult.records} alone.
+ */
+export interface ParseResult {
+  /** Every non-empty line parsed into a {@link TodoRecord}. */
+  records: TodoRecord[];
+  /**
+   * Every warning from the document, in document order, annotated with the
+   * 1-based physical line number.
+   */
+  warnings: ParseWarning[];
+  /**
+   * Number of physical lines in the input. A single trailing newline ends
+   * the last line rather than starting an empty one, and the empty input has
+   * no lines.
+   */
+  lineCount: number;
+  /** Lines skipped because they were blank or whitespace-only. */
+  skippedLines: number;
+}
+
+/**
  * Callbacks supplied by the consumer.
  *
  * The library itself never touches the filesystem. `read` is used by

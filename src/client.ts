@@ -1,5 +1,6 @@
 import { cloneRecords } from "./clone.ts";
-import { parseDocument } from "./parse.ts";
+import { TodoReadError } from "./errors.ts";
+import { parseDocumentResult } from "./parse.ts";
 import { createTodoQuery } from "./query.ts";
 import type {
   TodoMatchOptions,
@@ -10,6 +11,7 @@ import type {
   TodoSummary,
 } from "./query.ts";
 import type {
+  ParseWarning,
   TodoClientOptions,
   TodoLogger,
   TodoRecord,
@@ -19,6 +21,16 @@ import type {
 export interface TodoTxtClient {
   /** Read fresh todo.txt contents, replace the cache, and return every record. */
   all: () => Promise<TodoRecord[]>;
+  /**
+   * Warnings from the most recent successful read, in document order.
+   *
+   * Empty before the first read and after a read without warnings. A failed
+   * read leaves the previous read's warnings in place. The returned array and
+   * its warnings are copies, so callers may mutate them without affecting
+   * later calls. A `logger`, when supplied, still receives warnings as they
+   * are found; this is an additional access path, not a replacement.
+   */
+  warnings: () => ParseWarning[];
   /** Query only records that are not completed, using the cached snapshot. */
   pending: () => TodoQuery;
   /** Query only records that are completed, using the cached snapshot. */
@@ -76,8 +88,12 @@ export interface TodoTxtClient {
  * producing the file contents and `options.write` will be used by the write
  * APIs once they are implemented. `options.logger` is optional and silent by
  * default; when supplied, it receives read lifecycle and parse warning
- * diagnostics. With `options.includeSource`, every record also carries the
- * 1-based `line` number and the exact `raw` line it was parsed from. With
+ * diagnostics. Warnings from the most recent read are also available as data
+ * through {@link TodoTxtClient.warnings}. A `read` hook rejection propagates
+ * untouched when the rejected value is an `Error`; any other value is wrapped
+ * in a {@link TodoReadError} that carries the original on `cause`. With
+ * `options.includeSource`, every record also carries the 1-based `line` number
+ * and the exact `raw` line it was parsed from. With
  * `options.caseSensitive: false`, project and context matching compares
  * names through `toLowerCase()`; the default is exact matching.
  *
@@ -96,6 +112,7 @@ export interface TodoTxtClient {
  */
 export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
   let cache: TodoRecord[] | undefined;
+  let lastWarnings: ParseWarning[] = [];
   let inFlight: Promise<TodoRecord[]> | undefined;
   let generation = 0;
 
@@ -124,8 +141,25 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
     const currentGeneration = ++generation;
 
     log("debug", "Reading todo file");
-    const contents = await options.read();
-    const records = parseDocument(contents, {
+
+    let contents: string;
+    try {
+      contents = await options.read();
+    } catch (cause) {
+      // Real errors (including fs errors with a code such as ENOENT)
+      // propagate untouched so existing error checks keep working; anything
+      // else is wrapped so every read failure has a typed shape.
+      if (cause instanceof Error) {
+        throw cause;
+      }
+
+      throw new TodoReadError(
+        "The read hook rejected with a non-Error value.",
+        cause,
+      );
+    }
+
+    const result = parseDocumentResult(contents, {
       includeSource: options.includeSource,
       onWarning: (warning) => {
         log("warn", warning.message, {
@@ -135,10 +169,12 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
         });
       },
     });
+    const records = result.records;
     log("debug", "Parsed todo file", { records: records.length });
 
     if (currentGeneration === generation) {
       cache = records;
+      lastWarnings = result.warnings;
     }
 
     return records;
@@ -174,6 +210,12 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
   const all = async (): Promise<TodoRecord[]> =>
     cloneRecords(await refresh());
 
+  const warnings = (): ParseWarning[] =>
+    lastWarnings.map((warning) => ({
+      ...warning,
+      meta: { ...warning.meta },
+    }));
+
   const query = createTodoQuery(loadCached, {
     filters: [],
     caseSensitive: options.caseSensitive ?? true,
@@ -181,6 +223,7 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
 
   return {
     all,
+    warnings,
     pending: query.pending,
     completed: query.completed,
     project: query.project,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseDocument, parseLine } from "./parse.ts";
+import { parseDocument, parseDocumentResult, parseLine } from "./parse.ts";
 import type { ParseWarning } from "./types.ts";
 
 describe("parseLine", () => {
@@ -314,6 +314,121 @@ describe("parseDocument", () => {
   test("returns an empty array for empty input", () => {
     expect(parseDocument("")).toEqual([]);
     expect(parseDocument("\n\r\n   \n")).toEqual([]);
+  });
+});
+
+describe("parseDocumentResult", () => {
+  test("returns the same records as parseDocument", () => {
+    const contents = [
+      "(A) Thank Mom for the meatballs @phone",
+      "",
+      "x 2011-03-03 2011-03-01 Review Tim's pull request +TodoTxtTouch",
+      "Task due:2010-01-02 due:2010-02-02",
+    ].join("\n");
+
+    const result = parseDocumentResult(contents, { includeSource: true });
+
+    expect(result.records).toEqual(
+      parseDocument(contents, { includeSource: true }),
+    );
+  });
+
+  test("collects warnings in document order with physical line numbers", () => {
+    const result = parseDocumentResult(
+      ["(A) First", "", "Task due:a due:b", "2011-99-99 Bad date"].join("\n"),
+    );
+
+    expect(
+      result.warnings.map((warning) => [warning.code, warning.line]),
+    ).toEqual([
+      ["duplicate-metadata-key", 3],
+      ["invalid-date", 4],
+    ]);
+  });
+
+  test("numbers warning lines correctly with blank lines and CRLF", () => {
+    const result = parseDocumentResult("First\r\n\r\nTask due:a due:b\r\n");
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]?.line).toBe(3);
+  });
+
+  test("keeps in-line order when one line produces several warnings", () => {
+    const result = parseDocumentResult("x 2011-99-99 Task due:a due:b");
+
+    expect(result.warnings.map((warning) => warning.code)).toEqual([
+      "invalid-date",
+      "duplicate-metadata-key",
+    ]);
+    expect(result.warnings.every((warning) => warning.line === 1)).toBe(true);
+  });
+
+  test("still forwards warnings to options.onWarning", () => {
+    const forwarded: ParseWarning[] = [];
+    const result = parseDocumentResult("Task due:a due:b", {
+      onWarning: (warning) => forwarded.push(warning),
+    });
+
+    expect(forwarded).toEqual(result.warnings);
+    expect(forwarded[0]?.line).toBe(1);
+  });
+
+  test("carries no warnings for a clean document", () => {
+    const result = parseDocumentResult(
+      "(A) Call Mom +Family @phone due:2011-03-05",
+    );
+
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("counts physical lines and skipped blank lines", () => {
+    const result = parseDocumentResult("a\n\n  \nb\n");
+
+    expect(result.lineCount).toBe(4);
+    expect(result.skippedLines).toBe(2);
+    expect(result.records).toHaveLength(2);
+  });
+
+  test("a trailing newline does not add a phantom line", () => {
+    expect(parseDocumentResult("a\nb\n")).toMatchObject({
+      lineCount: 2,
+      skippedLines: 0,
+    });
+    expect(parseDocumentResult("a\nb").lineCount).toBe(2);
+    expect(parseDocumentResult("a\n\n").lineCount).toBe(2);
+  });
+
+  test("counts a lone newline as one blank line", () => {
+    expect(parseDocumentResult("\n")).toEqual({
+      records: [],
+      warnings: [],
+      lineCount: 1,
+      skippedLines: 1,
+    });
+  });
+
+  test("returns zero counts for empty input", () => {
+    expect(parseDocumentResult("")).toEqual({
+      records: [],
+      warnings: [],
+      lineCount: 0,
+      skippedLines: 0,
+    });
+  });
+
+  test("passes includeSource through to records", () => {
+    const result = parseDocumentResult("a\n\nb", { includeSource: true });
+
+    expect(result.records.map((record) => record.line)).toEqual([1, 3]);
+    expect(result.records.map((record) => record.raw)).toEqual(["a", "b"]);
+  });
+
+  test("works without options", () => {
+    const result = parseDocumentResult("(A) Call Mom");
+
+    expect(result.records).toHaveLength(1);
+    expect(result.warnings).toEqual([]);
+    expect(result.lineCount).toBe(1);
   });
 });
 
