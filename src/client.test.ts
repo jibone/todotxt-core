@@ -134,6 +134,7 @@ describe("createTodoTxt", () => {
       "read failed",
     );
     await expect(todos.projects()).rejects.toThrow("read failed");
+    await expect(todos.summary()).rejects.toThrow("read failed");
   });
 
   test("exposes root filters and plucks", async () => {
@@ -156,6 +157,36 @@ describe("createTodoTxt", () => {
     );
     expect(await todos.projects()).toEqual(["Alpha", "Beta"]);
     expect(await todos.contexts()).toEqual(["home", "office"]);
+  });
+
+  test("exposes root summary and name counts", async () => {
+    const todos = createTodoTxt({
+      read: () =>
+        [
+          "(A) Pending task +Alpha @home",
+          "x 2024-01-02 Completed task +Beta @office",
+        ].join("\n"),
+      write: () => {},
+    });
+
+    const summary = await todos.summary();
+
+    expect(summary).toEqual({
+      total: 2,
+      pending: 1,
+      completed: 1,
+      projects: [
+        { name: "Alpha", counts: { pending: 1, completed: 0, total: 1 } },
+        { name: "Beta", counts: { pending: 0, completed: 1, total: 1 } },
+      ],
+      contexts: [
+        { name: "home", counts: { pending: 1, completed: 0, total: 1 } },
+        { name: "office", counts: { pending: 0, completed: 1, total: 1 } },
+      ],
+    });
+
+    expect(await todos.countsByProject()).toEqual(summary.projects);
+    expect(await todos.countsByContext()).toEqual(summary.contexts);
   });
 
   test("all() is a terminal Promise", () => {
@@ -186,6 +217,9 @@ describe("in-memory cache", () => {
     await todos.completed();
     await todos.projects();
     await todos.contexts();
+    await todos.summary();
+    await todos.countsByProject();
+    await todos.countsByContext();
     await todos.project("Alpha").completed();
     await todos.context("office").pending();
 

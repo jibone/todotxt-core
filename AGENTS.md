@@ -11,6 +11,10 @@ Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). The
   `completedAfter`/`completedBefore` date filters
 - `sortBy(field, direction?)`, `count()`, and `first()`
 - `projects()` and `contexts()` pluck unique, alphabetically sorted names
+- `summary()` returns totals plus per-project/context pending/completed
+  counts; `countsByProject()` and `countsByContext()` return the per-name
+  counts alone. A record tagged with several names counts once per name, so
+  per-name totals do not sum to the summary total.
 
 Filters compose sequentially (AND across calls, OR for array arguments), the
 sort step is stable with nulls last in both directions, and the client caches
@@ -28,7 +32,7 @@ with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
 - Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
+- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
 
 ## Gotchas
 - Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`. Update both when parser behavior changes.

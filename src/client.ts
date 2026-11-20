@@ -3,9 +3,11 @@ import { parseDocument } from "./parse.ts";
 import { createTodoQuery } from "./query.ts";
 import type {
   TodoMatchOptions,
+  TodoNameCount,
   TodoQuery,
   TodoSortDirection,
   TodoSortField,
+  TodoSummary,
 } from "./query.ts";
 import type {
   TodoClientOptions,
@@ -59,6 +61,12 @@ export interface TodoTxtClient {
   projects: () => Promise<string[]>;
   /** List unique context names from the cached snapshot, alphabetically sorted. */
   contexts: () => Promise<string[]>;
+  /** Aggregate counts for the cached snapshot; see {@link TodoQuery.summary}. */
+  summary: () => Promise<TodoSummary>;
+  /** Per-project counts for the cached snapshot; see {@link TodoQuery.countsByProject}. */
+  countsByProject: () => Promise<TodoNameCount[]>;
+  /** Per-context counts for the cached snapshot; see {@link TodoQuery.countsByContext}. */
+  countsByContext: () => Promise<TodoNameCount[]>;
 }
 
 /**
@@ -80,10 +88,11 @@ export interface TodoTxtClient {
  *
  * Every line is parsed into a {@link TodoRecord} when the cache is populated.
  * Filters such as {@link TodoQuery.pending} and {@link TodoQuery.project}
- * operate on that array of JSON records, and plucks such as
- * {@link TodoQuery.projects} return unique, alphabetically sorted names.
- * Returned records are copies, so callers may mutate them without affecting the
- * cache.
+ * operate on that array of JSON records, plucks such as
+ * {@link TodoQuery.projects} return unique, alphabetically sorted names, and
+ * aggregates such as {@link TodoQuery.summary} count pending and completed
+ * records per name. Returned records are copies, so callers may mutate them
+ * without affecting the cache.
  */
 export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
   let cache: TodoRecord[] | undefined;
@@ -191,5 +200,8 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
     first: query.first,
     projects: query.projects,
     contexts: query.contexts,
+    summary: query.summary,
+    countsByProject: query.countsByProject,
+    countsByContext: query.countsByContext,
   };
 }

@@ -133,6 +133,7 @@ await todos.createdAfter("2024-01-01"); // TodoRecord[]
 await todos.notProject("Garden");       // TodoRecord[]
 await todos.count();                   // number
 await todos.first();                   // TodoRecord | undefined
+await todos.summary();                 // TodoSummary
 ```
 
 Filters compose, so they can be combined in any order:
@@ -292,6 +293,57 @@ await todos.pending().count();                 // 12
 await todos.sortBy("priority").first();        // first (A) task
 await todos.project("Missing").first();        // undefined
 ```
+
+### Aggregates and counts
+
+`summary()` returns top-level totals plus per-name counts in one query, and
+`countsByProject()` / `countsByContext()` return the per-name counts alone:
+
+```ts
+const summary = await todos.summary();
+// {
+//   total: 19, pending: 12, completed: 7,
+//   projects: [
+//     { name: "GarageSale",   counts: { pending: 3, completed: 1, total: 4 } },
+//     { name: "Garden",       counts: { pending: 2, completed: 0, total: 2 } },
+//     { name: "Moving",       counts: { pending: 1, completed: 1, total: 2 } },
+//     { name: "OpenSource",   counts: { pending: 2, completed: 2, total: 4 } },
+//     { name: "TodoTxt",      counts: { pending: 2, completed: 2, total: 4 } },
+//     { name: "TodoTxtTouch", counts: { pending: 0, completed: 1, total: 1 } },
+//   ],
+//   contexts: [
+//     { name: "archive",  counts: { pending: 0, completed: 2, total: 2 } },
+//     { name: "computer", counts: { pending: 2, completed: 2, total: 4 } },
+//     { name: "errands",   counts: { pending: 2, completed: 1, total: 3 } },
+//     { name: "github",    counts: { pending: 1, completed: 2, total: 3 } },
+//     { name: "hardware",  counts: { pending: 2, completed: 0, total: 2 } },
+//     { name: "home",      counts: { pending: 3, completed: 1, total: 4 } },
+//     { name: "phone",     counts: { pending: 2, completed: 1, total: 3 } },
+//   ],
+// }
+
+await todos.countsByProject(); // summary.projects on its own
+await todos.countsByContext(); // summary.contexts on its own
+```
+
+Aggregates respect filter chains, so they can be scoped like any other query:
+
+```ts
+await todos.pending().summary();              // pending records only
+await todos.project("GarageSale").summary();  // one project's dashboard
+```
+
+The counting rules:
+
+- A record tagged with several names counts once per name, so per-name
+  totals do **not** sum to the top-level `total`: multi-tag records make the
+  sum larger and untagged records make it smaller.
+- Names are unique and alphabetically sorted, matching `projects()` and
+  `contexts()`. Completed-only records still contribute their names; use
+  `pending().summary()` (or `pending().countsByProject()`) to count pending
+  work only.
+- `sortBy` steps are ignored, like the name plucks.
+- Aggregates load through the cache like every other query.
 
 ### Case-insensitive matching
 

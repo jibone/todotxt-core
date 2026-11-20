@@ -959,3 +959,228 @@ describe("count and first", () => {
     expect((await todos.first())?.projects).toEqual([]);
   });
 });
+
+describe("summary", () => {
+  test("totals match pending() and completed() lengths", async () => {
+    const todos = createClient();
+
+    const summary = await todos.summary();
+
+    expect(summary.total).toBe(19);
+    expect(summary.pending).toBe((await todos.pending()).length);
+    expect(summary.completed).toBe((await todos.completed()).length);
+    expect(summary.pending + summary.completed).toBe(summary.total);
+  });
+
+  test("counts every project and context alphabetically", async () => {
+    const todos = createClient();
+    const summary = await todos.summary();
+
+    expect(summary.projects).toEqual([
+      { name: "GarageSale", counts: { pending: 3, completed: 1, total: 4 } },
+      { name: "Garden", counts: { pending: 2, completed: 0, total: 2 } },
+      { name: "Moving", counts: { pending: 1, completed: 1, total: 2 } },
+      { name: "OpenSource", counts: { pending: 2, completed: 2, total: 4 } },
+      { name: "TodoTxt", counts: { pending: 2, completed: 2, total: 4 } },
+      { name: "TodoTxtTouch", counts: { pending: 0, completed: 1, total: 1 } },
+    ]);
+
+    expect(summary.contexts).toEqual([
+      { name: "archive", counts: { pending: 0, completed: 2, total: 2 } },
+      { name: "computer", counts: { pending: 2, completed: 2, total: 4 } },
+      { name: "errands", counts: { pending: 2, completed: 1, total: 3 } },
+      { name: "github", counts: { pending: 1, completed: 2, total: 3 } },
+      { name: "hardware", counts: { pending: 2, completed: 0, total: 2 } },
+      { name: "home", counts: { pending: 3, completed: 1, total: 4 } },
+      { name: "phone", counts: { pending: 2, completed: 1, total: 3 } },
+    ]);
+  });
+
+  test("name lists match the projects() and contexts() plucks", async () => {
+    const todos = createClient();
+    const summary = await todos.summary();
+
+    expect(summary.projects.map((entry) => entry.name)).toEqual(
+      await todos.projects(),
+    );
+    expect(summary.contexts.map((entry) => entry.name)).toEqual(
+      await todos.contexts(),
+    );
+  });
+
+  test("includes names that appear only on completed records", async () => {
+    const todos = createClient();
+    const summary = await todos.summary();
+
+    expect(summary.projects).toContainEqual({
+      name: "TodoTxtTouch",
+      counts: { pending: 0, completed: 1, total: 1 },
+    });
+    expect(summary.contexts).toContainEqual({
+      name: "archive",
+      counts: { pending: 0, completed: 2, total: 2 },
+    });
+  });
+
+  test("counts a multi-tag record once per name", async () => {
+    const todos = createClient(
+      [
+        "(A) Shared task +Alpha +Beta @home @office",
+        "Solo +Alpha @home",
+        "x 2024-01-01 Done +Beta",
+      ].join("\n"),
+    );
+
+    const summary = await todos.summary();
+
+    expect(summary.total).toBe(3);
+    expect(summary.projects).toEqual([
+      { name: "Alpha", counts: { pending: 2, completed: 0, total: 2 } },
+      { name: "Beta", counts: { pending: 1, completed: 1, total: 2 } },
+    ]);
+    expect(summary.contexts).toEqual([
+      { name: "home", counts: { pending: 2, completed: 0, total: 2 } },
+      { name: "office", counts: { pending: 1, completed: 0, total: 1 } },
+    ]);
+
+    // Per-name totals count multi-tag records once per name, so they do
+    // not sum to the top-level total.
+    const projectsTotal = summary.projects.reduce(
+      (sum, entry) => sum + entry.counts.total,
+      0,
+    );
+
+    expect(projectsTotal).toBe(4);
+    expect(projectsTotal).not.toBe(summary.total);
+  });
+
+  test("does not double count a name tagged twice on one record", async () => {
+    const todos = createClient("(A) Shared task +Alpha +Alpha @home @home");
+
+    const summary = await todos.summary();
+
+    expect(summary.projects).toEqual([
+      { name: "Alpha", counts: { pending: 1, completed: 0, total: 1 } },
+    ]);
+    expect(summary.contexts).toEqual([
+      { name: "home", counts: { pending: 1, completed: 0, total: 1 } },
+    ]);
+  });
+
+  test("respects filter chains", async () => {
+    const todos = createClient();
+
+    const pending = await todos.pending().summary();
+
+    expect(pending.total).toBe(12);
+    expect(pending.pending).toBe(12);
+    expect(pending.completed).toBe(0);
+    expect(pending.projects.map((entry) => entry.name)).toEqual(
+      await todos.pending().projects(),
+    );
+    expect(pending.projects.map((entry) => entry.name)).not.toContain(
+      "TodoTxtTouch",
+    );
+
+    const completed = await todos.completed().summary();
+
+    expect(completed.total).toBe(7);
+    expect(completed.completed).toBe(7);
+    expect(completed.pending).toBe(0);
+  });
+
+  test("summarizes a filtered subset of records", async () => {
+    const todos = createClient();
+
+    const summary = await todos.project("GarageSale").summary();
+
+    expect(summary.total).toBe(4);
+    expect(summary.pending).toBe(3);
+    expect(summary.completed).toBe(1);
+    expect(summary.projects).toEqual([
+      { name: "GarageSale", counts: { pending: 3, completed: 1, total: 4 } },
+    ]);
+    expect(summary.contexts.map((entry) => entry.name)).toEqual(
+      await todos.project("GarageSale").contexts(),
+    );
+  });
+
+  test("ignores sort steps like the name plucks", async () => {
+    const todos = createClient();
+
+    expect(await todos.sortBy("priority").summary()).toEqual(
+      await todos.summary(),
+    );
+  });
+
+  test("reads once through the cache", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    await todos.summary();
+    await todos.countsByProject();
+    await todos.countsByContext();
+
+    expect(readCalls).toBe(1);
+  });
+
+  test("summarizes an empty file with zeroes and empty name lists", async () => {
+    const todos = createClient("");
+
+    expect(await todos.summary()).toEqual({
+      total: 0,
+      pending: 0,
+      completed: 0,
+      projects: [],
+      contexts: [],
+    });
+  });
+});
+
+describe("counts by name", () => {
+  test("countsByProject and countsByContext match summary at the root", async () => {
+    const todos = createClient();
+    const summary = await todos.summary();
+
+    expect(await todos.countsByProject()).toEqual(summary.projects);
+    expect(await todos.countsByContext()).toEqual(summary.contexts);
+  });
+
+  test("respects filter chains", async () => {
+    const todos = createClient();
+
+    const counts = await todos.project("GarageSale").countsByContext();
+
+    expect(counts.map((entry) => entry.name)).toEqual(
+      await todos.project("GarageSale").contexts(),
+    );
+    expect(counts).toEqual([
+      { name: "errands", counts: { pending: 2, completed: 0, total: 2 } },
+      { name: "hardware", counts: { pending: 1, completed: 0, total: 1 } },
+      { name: "home", counts: { pending: 0, completed: 1, total: 1 } },
+      { name: "phone", counts: { pending: 1, completed: 0, total: 1 } },
+    ]);
+  });
+
+  test("pending counts contain no completed records", async () => {
+    const todos = createClient();
+
+    for (const entry of await todos.pending().countsByProject()) {
+      expect(entry.counts.completed).toBe(0);
+      expect(entry.counts.total).toBe(entry.counts.pending);
+    }
+  });
+
+  test("returns an empty list when nothing matches", async () => {
+    const todos = createClient();
+
+    expect(await todos.project("Missing").countsByContext()).toEqual([]);
+    expect(await todos.pending().completed().countsByProject()).toEqual([]);
+  });
+});
