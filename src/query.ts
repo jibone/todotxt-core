@@ -38,6 +38,54 @@ export interface TodoSortSpec {
   direction: TodoSortDirection;
 }
 
+/**
+ * Pending/completed/total counts for one bucket of records.
+ *
+ * `total` is always `pending + completed`.
+ */
+export interface TodoCount {
+  /** Records that are not completed. */
+  pending: number;
+  /** Records marked completed. */
+  completed: number;
+  /** Every record in the bucket. */
+  total: number;
+}
+
+/**
+ * One named bucket with its counts, from the aggregate query methods.
+ *
+ * The name is the project or context exactly as parsed, without the `+` or
+ * `@` prefix and with its original casing.
+ */
+export interface TodoNameCount {
+  /** Project or context name from the matching records. */
+  name: string;
+  /** Counts over the matching records that carry the name. */
+  counts: TodoCount;
+}
+
+/**
+ * Result of {@link TodoQuery.summary}: totals for the matching records plus
+ * per-name counts.
+ *
+ * Per-name totals count multi-tag records once per name, so they do not sum
+ * to the top-level `total` when multi-tag records or untagged records
+ * exist.
+ */
+export interface TodoSummary {
+  /** Every record matching the query. */
+  total: number;
+  /** Matching records that are not completed. */
+  pending: number;
+  /** Matching records that are completed. */
+  completed: number;
+  /** Per-project counts over the matching records. */
+  projects: TodoNameCount[];
+  /** Per-context counts over the matching records. */
+  contexts: TodoNameCount[];
+}
+
 /** Internal query state: AND-composed filters plus one optional sort step. */
 export interface TodoQueryState {
   filters: TodoFilter[];
@@ -59,6 +107,8 @@ export interface TodoQueryState {
  * `project(["A", "B"])` matches either name while `project("A").project("B")`
  * requires both. {@link TodoQuery.projects} and {@link TodoQuery.contexts}
  * are terminal plucks that resolve to unique, alphabetically sorted names;
+ * {@link TodoQuery.summary}, {@link TodoQuery.countsByProject}, and
+ * {@link TodoQuery.countsByContext} are terminal aggregates; and
  * {@link TodoQuery.count} and {@link TodoQuery.first} are terminal shortcuts.
  */
 export interface TodoQuery extends PromiseLike<TodoRecord[]> {
@@ -139,6 +189,30 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
   projects: () => Promise<string[]>;
   /** Unique context names in the current result, alphabetically sorted. */
   contexts: () => Promise<string[]>;
+  /**
+   * Aggregate counts for the records matching this query.
+   *
+   * `total`, `pending`, and `completed` count matching records, while
+   * `projects` and `contexts` count each matching record once per distinct
+   * name it carries, so a record tagged `+A +B` adds one to each name.
+   * Per-name totals therefore do not sum to the top-level `total` when
+   * multi-tag records or untagged records exist. Names are unique, keep
+   * their original casing, and sort alphabetically like
+   * {@link TodoQuery.projects}; completed-only records still contribute
+   * their names. A `sortBy` step is ignored, and the summary loads through
+   * the cache like every other query.
+   */
+  summary: () => Promise<TodoSummary>;
+  /**
+   * Unique project names in the current result with their counts; see
+   * {@link TodoQuery.summary} for the counting rules.
+   */
+  countsByProject: () => Promise<TodoNameCount[]>;
+  /**
+   * Unique context names in the current result with their counts; see
+   * {@link TodoQuery.summary} for the counting rules.
+   */
+  countsByContext: () => Promise<TodoNameCount[]>;
   /** Number of records in the current result; equal to `(await query).length`. */
   count: () => Promise<number>;
   /**
@@ -345,12 +419,91 @@ function pluckNames(
   );
 }
 
+/**
+ * Count pending/completed/total per unique name over `records`.
+ *
+ * Each record contributes at most once per name, so a record tagged
+ * `+A +A` counts `A` once. Names keep their original casing and sort
+ * like the name plucks, so buckets line up with `projects()`/`contexts()`.
+ */
+function countNames(
+  records: TodoRecord[],
+  pick: (todo: TodoRecord) => string[],
+): TodoNameCount[] {
+  const buckets = new Map<string, TodoCount>();
+
+  for (const record of records) {
+    for (const name of new Set(pick(record))) {
+      const bucket = buckets.get(name);
+
+      if (bucket === undefined) {
+        buckets.set(name, {
+          pending: record.completed ? 0 : 1,
+          completed: record.completed ? 1 : 0,
+          total: 1,
+        });
+      } else if (record.completed) {
+        bucket.completed += 1;
+        bucket.total += 1;
+      } else {
+        bucket.pending += 1;
+        bucket.total += 1;
+      }
+    }
+  }
+
+  return [...buckets]
+    .map(([name, counts]) => ({ name, counts }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
 function resolveCount(
   load: LoadRecords,
   state: TodoQueryState,
 ): Promise<number> {
   return resolveRaw(load, { ...state, sort: undefined }).then(
     (records) => records.length,
+  );
+}
+
+/**
+ * Aggregate the current result into a summary.
+ *
+ * Sorting never applies to aggregates; they count records, not order them.
+ */
+async function resolveSummary(
+  load: LoadRecords,
+  state: TodoQueryState,
+): Promise<TodoSummary> {
+  const records = await resolveRaw(load, { ...state, sort: undefined });
+  let pending = 0;
+  let completed = 0;
+
+  for (const record of records) {
+    if (record.completed) {
+      completed += 1;
+    } else {
+      pending += 1;
+    }
+  }
+
+  return {
+    total: records.length,
+    pending,
+    completed,
+    projects: countNames(records, (todo) => todo.projects),
+    contexts: countNames(records, (todo) => todo.contexts),
+  };
+}
+
+function resolveCountsBy(
+  load: LoadRecords,
+  state: TodoQueryState,
+  pick: (todo: TodoRecord) => string[],
+): Promise<TodoNameCount[]> {
+  // Sorting never applies to aggregates; they count records, not order them.
+  return resolveRaw(load, { ...state, sort: undefined }).then((records) =>
+    countNames(records, pick),
   );
 }
 
@@ -519,6 +672,9 @@ export function createTodoQuery(
       createTodoQuery(load, { ...state, sort: { field, direction } }),
     projects: () => pluckNames(load, state, (todo) => todo.projects),
     contexts: () => pluckNames(load, state, (todo) => todo.contexts),
+    summary: () => resolveSummary(load, state),
+    countsByProject: () => resolveCountsBy(load, state, (todo) => todo.projects),
+    countsByContext: () => resolveCountsBy(load, state, (todo) => todo.contexts),
     count: () => resolveCount(load, state),
     first: () => resolveFirst(load, state),
     then: (onfulfilled, onrejected) =>
