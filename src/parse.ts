@@ -75,6 +75,17 @@ function stripTrailingCarriageReturn(line: string): string {
 }
 
 /**
+ * Remove one leading UTF-8 byte-order mark (U+FEFF).
+ *
+ * Editors often write a BOM at the start of a file, and it would otherwise
+ * defeat the priority and date prefix checks on the first line. `raw` is
+ * built from the caller's original line, so it keeps the mark.
+ */
+function stripLeadingBom(line: string): string {
+  return line.startsWith("\uFEFF") ? line.slice(1) : line;
+}
+
+/**
  * Parse a single todo.txt line directly into a JSON-friendly {@link TodoRecord}.
  *
  * The parser follows the todo.txt format rules:
@@ -91,9 +102,13 @@ function stripTrailingCarriageReturn(line: string): string {
  * Recoverable issues are reported to `options.onWarning` when supplied;
  * parsing still produces a record.
  *
+ * One leading byte-order mark (U+FEFF) is dropped before the prefix checks,
+ * so a BOM saved by an editor cannot hide the priority or dates. The mark
+ * is kept in `raw`.
+ *
  * With `options.includeSource`, the record carries `raw` (the exact input
- * line, minus a trailing `\r`) and `line` (the number supplied via
- * `options.line`, when given).
+ * line, minus a trailing `\r`, with a leading byte-order mark kept) and
+ * `line` (the number supplied via `options.line`, when given).
  */
 export function parseLine(
   line: string,
@@ -109,7 +124,7 @@ export function parseLine(
   onWarningOrOptions?: ParseWarningHandler | ParseOptions,
 ): TodoRecord {
   const options = normalizeParseOptions(onWarningOrOptions);
-  let rest = line;
+  let rest = stripLeadingBom(line);
   let completed = false;
   let priority: string | null = null;
   let completedAt: string | null = null;
@@ -185,19 +200,20 @@ export function parseLine(
  *
  * Warnings are always collected, in document order and annotated with their
  * 1-based physical line number, and forwarded to the consumer's `onWarning`
- * when one is supplied. A single trailing newline ends the last line rather
- * than starting an empty one, so it adds neither a line nor a skipped line.
+ * when one is supplied. A single trailing `\n` or lone `\r` ends the last
+ * line rather than starting an empty one, so it adds neither a line nor a
+ * skipped line.
  */
 function parseDocumentCore(
   contents: string,
   options: ParseOptions,
 ): ParseResult {
   const { includeSource, onWarning } = options;
-  const segments = contents.split(/\r?\n/);
+  const segments = contents.split(/\r\n|\n|\r/);
   const lines =
     contents === ""
       ? []
-      : contents.endsWith("\n")
+      : contents.endsWith("\n") || contents.endsWith("\r")
         ? segments.slice(0, -1)
         : segments;
 
@@ -233,9 +249,9 @@ function parseDocumentCore(
 /**
  * Parse the contents of a todo.txt file.
  *
- * Lines are split on `\n` or `\r\n`; blank and whitespace-only lines are
- * skipped. Every remaining line becomes a {@link TodoRecord}. Warnings are
- * annotated with the 1-based physical line number.
+ * Lines are split on `\n`, `\r\n`, or a lone `\r`; blank and whitespace-only
+ * lines are skipped. Every remaining line becomes a {@link TodoRecord}.
+ * Warnings are annotated with the 1-based physical line number.
  *
  * With `options.includeSource`, every record carries `raw` (the exact line,
  * minus a trailing `\r`) and `line` (the 1-based physical line number,
@@ -268,8 +284,8 @@ export function parseDocument(
  * {@link ParseResult} additionally carries every warning in document order
  * (annotated with the 1-based physical line number), the number of physical
  * lines, and how many of them were blank or whitespace-only. A single
- * trailing newline ends the last line rather than starting an empty one, and
- * the empty input has no lines.
+ * trailing `\n` or lone `\r` ends the last line rather than starting an
+ * empty one, and the empty input has no lines.
  *
  * Warnings are also forwarded to `options.onWarning` when supplied, so this
  * composes with existing warning handling.
