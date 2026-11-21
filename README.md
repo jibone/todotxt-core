@@ -270,17 +270,61 @@ await todos.notContext(["phone", "computer"]);
 
 `sortBy` appends an ordering step after filtering. The sort is stable, so
 records with equal keys keep file order. Missing values — `null` priorities or
-dates, and missing or invalid `due` values — sort last in both directions;
-`"desc"` reverses only the value comparison. Calling `sortBy` twice keeps the
-last call.
+dates — sort last in both directions; `"desc"` reverses only the value
+comparison. The last `sortBy` or `sortByMeta` call wins.
 
 ```ts
 await todos.pending().sortBy("priority");     // A first, then B–Z, no priority last
 await todos.sortBy("createdAt");              // earliest first, nulls last
 await todos.sortBy("completedAt", "desc");    // latest first, nulls still last
-await todos.sortBy("due");                    // reads data.due; invalid or missing last
 await todos.sortBy("description");            // localeCompare ordering
 ```
+
+`sortByMeta(key)` orders by any `key:value` metadata value with a plain string
+comparison — valid `YYYY-MM-DD` values order chronologically, and the library
+favors no key. Records without the key sort last in both directions:
+
+```ts
+await todos.pending().sortByMeta("due");     // by data.due; missing last
+await todos.sortByMeta("part", "desc");      // any metadata key, not just due
+```
+
+### Due dates and other extension tags
+
+`due:`, `rec:`, `pri:` and every other `key:value` tag are tool conventions,
+not part of the todo.txt format proper. The format defines exactly two dates —
+the creation and completion dates — and both have first-class support: the
+`createdAt`/`completedAt` record fields, the `createdAfter` / `createdBefore` /
+`completedAfter` / `completedBefore` filters, and the `sortBy("createdAt")` /
+`sortBy("completedAt")` orderings.
+
+Extension values live in `data`, and behavior built on them is yours to
+define. `isValidDate` is exported for that job: it checks `YYYY-MM-DD` values
+arithmetically — no `Date` rollover, no timezone — exactly the check the parser
+applies to the two format dates.
+
+```ts
+import { isValidDate, type TodoRecord } from "@jibone/todotxt-core";
+
+isValidDate("2024-03-10"); // true
+isValidDate("2024-02-30"); // false — shape-valid, but not a real day
+```
+
+An overdue helper, for instance, is a few lines on the generic APIs:
+
+```ts
+function isOverdue(todo: TodoRecord, today: string): boolean {
+  const due = todo.data["due"];
+  return !todo.completed && due !== undefined && isValidDate(due) && due < today;
+}
+
+const overdue = (await todos.pending()).filter((todo) =>
+  isOverdue(todo, "2024-04-01"),
+);
+```
+
+The same goes for priorities recorded as `pri:A` on completed tasks: read them
+yourself, e.g. `todo.priority ?? todo.data["pri"] ?? null`.
 
 ### count() and first()
 

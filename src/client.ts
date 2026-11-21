@@ -65,6 +65,11 @@ export interface TodoTxtClient {
   completedBefore: (date: string) => TodoQuery;
   /** Sort the whole cached snapshot; see {@link TodoQuery.sortBy}. */
   sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery;
+  /**
+   * Sort the whole cached snapshot by a metadata value; see
+   * {@link TodoQuery.sortByMeta}.
+   */
+  sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery;
   /** Count records in the cached snapshot; see {@link TodoQuery.count}. */
   count: () => Promise<number>;
   /** First record of the cached snapshot; see {@link TodoQuery.first}. */
@@ -239,6 +244,7 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
     completedAfter: query.completedAfter,
     completedBefore: query.completedBefore,
     sortBy: query.sortBy,
+    sortByMeta: query.sortByMeta,
     count: query.count,
     first: query.first,
     projects: query.projects,

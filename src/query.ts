@@ -13,10 +13,12 @@ export type TodoSortField =
   | "priority"
   | "createdAt"
   | "completedAt"
-  | "description"
-  | "due";
+  | "description";
 
-/** Sort direction for {@link TodoQuery.sortBy}. Default: `"asc"`. */
+/**
+ * Sort direction for {@link TodoQuery.sortBy} and {@link TodoQuery.sortByMeta}.
+ * Default: `"asc"`.
+ */
 export type TodoSortDirection = "asc" | "desc";
 
 /**
@@ -32,9 +34,18 @@ export interface TodoMatchOptions {
   caseSensitive?: boolean;
 }
 
-/** One ordering step appended by {@link TodoQuery.sortBy}. */
-export interface TodoSortSpec {
+/** One ordering step, from {@link TodoQuery.sortBy} or {@link TodoQuery.sortByMeta}. */
+export type TodoSortSpec = TodoFieldSortSpec | TodoMetaSortSpec;
+
+/** Order by a record field; appended by {@link TodoQuery.sortBy}. */
+export interface TodoFieldSortSpec {
   field: TodoSortField;
+  direction: TodoSortDirection;
+}
+
+/** Order by a metadata value; appended by {@link TodoQuery.sortByMeta}. */
+export interface TodoMetaSortSpec {
+  key: string;
   direction: TodoSortDirection;
 }
 
@@ -178,13 +189,24 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * Sort the filtered records by `field`; default direction is `"asc"`.
    *
    * The sort is stable: records with equal keys keep file order. Missing
-   * values (`null` priorities or dates, and missing or invalid `due` values)
-   * sort last in both directions; `"desc"` reverses only the value
-   * comparison, never the missing-value placement. Calling `sortBy` twice
-   * keeps only the last call. Description ordering uses `localeCompare`, so
-   * it follows the host locale for equal-ignoring-case ties.
+   * values (`null` priorities or dates) sort last in both directions;
+   * `"desc"` reverses only the value comparison, never the missing-value
+   * placement. Calling `sortBy` or `sortByMeta` again keeps only the last
+   * call. Description ordering uses `localeCompare`, so it follows the host
+   * locale for equal-ignoring-case ties.
    */
   sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery;
+  /**
+   * Sort the filtered records by the metadata `key`; default direction is
+   * `"asc"`.
+   *
+   * Values compare as plain strings, so `YYYY-MM-DD` values order
+   * chronologically whether the key is `due:`, `rec:`, or any other tag a
+   * tool invents; the library favors no key. Records without the key sort
+   * last in both directions, and a key no record carries leaves file order
+   * intact. The last `sortBy` or `sortByMeta` call wins.
+   */
+  sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery;
   /** Unique project names in the current result, alphabetically sorted. */
   projects: () => Promise<string[]>;
   /** Unique context names in the current result, alphabetically sorted. */
@@ -292,12 +314,6 @@ function dateFilter(
   };
 }
 
-/** Read `data.due` when it is a real calendar date; otherwise `null`. */
-function dueDateOf(todo: TodoRecord): string | null {
-  const due = todo.data["due"];
-  return due !== undefined && isValidDate(due) ? due : null;
-}
-
 type NullableSortField = Exclude<TodoSortField, "description">;
 
 /** Extract the nullable sort key for every field except `description`. */
@@ -309,9 +325,12 @@ function sortKey(todo: TodoRecord, field: NullableSortField): string | null {
       return todo.createdAt;
     case "completedAt":
       return todo.completedAt;
-    case "due":
-      return dueDateOf(todo);
   }
+}
+
+/** Read a metadata value as the nullable sort key for `sortByMeta`. */
+function metaSortKey(todo: TodoRecord, key: string): string | null {
+  return todo.data[key] ?? null;
 }
 
 /**
@@ -341,19 +360,28 @@ function compareNullableKeys(
 function makeComparator(
   spec: TodoSortSpec,
 ): (a: TodoRecord, b: TodoRecord) => number {
-  if (spec.field === "description") {
-    return (a, b) => {
-      const result = a.description.localeCompare(b.description);
-      return spec.direction === "asc" ? result : -result;
-    };
-  }
+  if ("field" in spec) {
+    if (spec.field === "description") {
+      return (a, b) => {
+        const result = a.description.localeCompare(b.description);
+        return spec.direction === "asc" ? result : -result;
+      };
+    }
 
-  const field: NullableSortField = spec.field;
+    const field: NullableSortField = spec.field;
+
+    return (a, b) =>
+      compareNullableKeys(
+        sortKey(a, field),
+        sortKey(b, field),
+        spec.direction,
+      );
+  }
 
   return (a, b) =>
     compareNullableKeys(
-      sortKey(a, field),
-      sortKey(b, field),
+      metaSortKey(a, spec.key),
+      metaSortKey(b, spec.key),
       spec.direction,
     );
 }
@@ -519,9 +547,9 @@ async function resolveFirst(
  * Create a lazy query over the records loaded by `load`.
  *
  * Each filter method appends a predicate, so chained calls compose with AND,
- * while array arguments match any listed value. `sortBy` appends an ordering
- * step instead of a predicate; the last `sortBy` call wins. For example,
- * `pending().completed()` matches nothing, while
+ * while array arguments match any listed value. `sortBy` and `sortByMeta`
+ * append an ordering step instead of a predicate; the last of those calls
+ * wins. For example, `pending().completed()` matches nothing, while
  * `project("Work").pending()` matches pending records in `Work`, and
  * `pending().sortBy("priority")` lists them A first.
  */
@@ -670,6 +698,8 @@ export function createTodoQuery(
       }),
     sortBy: (field, direction = "asc") =>
       createTodoQuery(load, { ...state, sort: { field, direction } }),
+    sortByMeta: (key, direction = "asc") =>
+      createTodoQuery(load, { ...state, sort: { key, direction } }),
     projects: () => pluckNames(load, state, (todo) => todo.projects),
     contexts: () => pluckNames(load, state, (todo) => todo.contexts),
     summary: () => resolveSummary(load, state),

@@ -17,12 +17,14 @@ section('sortBy("priority", "desc") - reverses the letters, nulls still last');
 printRecords(await todos.sortBy("priority", "desc"));
 
 section(
-  'pending().sortBy("due") - missing and invalid due values sort last',
+  'pending().sortByMeta("due") - sorts by any metadata key, missing last',
 );
-printRecords(await todos.pending().sortBy("due"));
+printRecords(await todos.pending().sortByMeta("due"));
 
-section('sortBy("due", "desc") - reverses only the value comparison');
-printRecords(await todos.sortBy("due", "desc"));
+section(
+  'sortByMeta("due", "desc") - reverses only the value comparison',
+);
+printRecords(await todos.sortByMeta("due", "desc"));
 
 section('sortBy("createdAt") - earliest first, records without dates last');
 printRecords(await todos.sortBy("createdAt"));

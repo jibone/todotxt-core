@@ -143,51 +143,77 @@ describe("sortBy completedAt", () => {
   });
 });
 
-describe("sortBy due", () => {
-  test("sorts valid due dates and leaves missing or invalid ones last", async () => {
+describe("sortByMeta", () => {
+  test("sorts metadata values as plain strings with missing keys last", async () => {
     const todos = createClient();
 
-    expect(descriptions(await todos.sortBy("due"))).toEqual([
+    // Plain string comparison: the due dates order chronologically and the
+    // non-date value slots wherever its characters fall, not last.
+    expect(descriptions(await todos.sortByMeta("due"))).toEqual([
       "Overdue chore",
       "Ship the sort feature",
       "Write the sort docs",
-      "Add sort tests",
       "Tidy the README",
+      "Add sort tests",
       "Design the comparator",
       "Release v0.5",
       "No dates at all",
     ]);
   });
 
-  test("reverses valid due dates but keeps missing and invalid ones last", async () => {
+  test("reverses the values but keeps missing keys last for desc", async () => {
     const todos = createClient();
 
-    expect(descriptions(await todos.sortBy("due", "desc"))).toEqual([
+    expect(descriptions(await todos.sortByMeta("due", "desc"))).toEqual([
+      "Tidy the README",
       "Write the sort docs",
       "Ship the sort feature",
       "Overdue chore",
       "Add sort tests",
-      "Tidy the README",
       "Design the comparator",
       "Release v0.5",
       "No dates at all",
     ]);
   });
 
-  test("missing and invalid due values keep file order", async () => {
+  test("compares values as strings, not numbers", async () => {
     const todos = createClient(
       [
-        "First no due",
-        "Second with due:2024-05-05",
-        "Third invalid due:2024-13-99",
+        "Shelf left part:2",
+        "Shelf right part:10",
+        "Shelf top part:1",
+        "Sweep the floor",
       ].join("\n"),
     );
 
-    expect(descriptions(await todos.sortBy("due"))).toEqual([
-      "Second with",
-      "First no due",
-      "Third invalid",
+    // "10" sorts between "1" and "2" because the comparison is textual.
+    expect(descriptions(await todos.sortByMeta("part"))).toEqual([
+      "Shelf top",
+      "Shelf right",
+      "Shelf left",
+      "Sweep the floor",
     ]);
+  });
+
+  test("records with equal values keep file order", async () => {
+    const todos = createClient(
+      ["First rank:2", "Second rank:1", "Third rank:2", "Fourth"].join("\n"),
+    );
+
+    expect(descriptions(await todos.sortByMeta("rank"))).toEqual([
+      "Second",
+      "First",
+      "Third",
+      "Fourth",
+    ]);
+  });
+
+  test("a key no record carries leaves file order intact", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.sortByMeta("nada"))).toEqual(
+      descriptions(await todos.all()),
+    );
   });
 });
 
@@ -231,6 +257,17 @@ describe("sortBy composition", () => {
     expect(
       descriptions(await todos.sortBy("priority").sortBy("description")),
     ).toEqual(descriptions(await todos.sortBy("description")));
+  });
+
+  test("last call wins between sortBy and sortByMeta", async () => {
+    const todos = createClient();
+
+    expect(
+      descriptions(await todos.sortBy("priority").sortByMeta("due")),
+    ).toEqual(descriptions(await todos.sortByMeta("due")));
+    expect(
+      descriptions(await todos.sortByMeta("due").sortBy("priority")),
+    ).toEqual(descriptions(await todos.sortBy("priority")));
   });
 
   test("sorting does not disturb the cached file order", async () => {
