@@ -122,6 +122,8 @@ call, so `project(["Garden", "Moving"])` matches either name while
 
 ```ts
 await todos.all();                     // TodoRecord[] (always reloads)
+await todos.refresh();                 // TodoRecord[] (reload, replace the cache)
+todos.invalidate();                    // void (drop the cache; next query re-reads)
 await todos.pending();                 // TodoRecord[]
 await todos.completed();               // TodoRecord[]
 await todos.project("TodoTxt");         // TodoRecord[]
@@ -161,17 +163,35 @@ for (const project of projects) {
 }
 ```
 
-`all()` always performs a fresh read and replaces the cache:
+`all()` and `refresh()` always perform a fresh read and replace the cache.
+`refresh()` is equivalent to `all()` in effect; it exists to state the intent
+and for options it may grow later:
 
 ```ts
-await todos.pending(); // may load the cache
-await todos.all();     // always reloads
-await todos.pending(); // uses the refreshed cache
+await todos.pending();  // may load the cache
+await todos.refresh();  // re-read and replace the cache
+await todos.pending();  // uses the refreshed cache
 ```
 
-There is no TTL or background refresh. If the file changes outside the client,
-call `await todos.all()` before querying again. Returned records are independent
-copies, so mutating them does not affect later queries.
+`invalidate()` drops the cache without reading; the next query reads again:
+
+```ts
+todos.invalidate();
+await todos.pending();  // reads once and caches again
+await todos.completed(); // cached
+```
+
+Invalidation is safe while a read is in flight. A read that settles after
+`invalidate()` still resolves for its callers, but it never repopulates the
+cache — the newer read wins. Queries started before `invalidate()` may
+likewise resolve with the old snapshot; both are expected. Since the snapshot
+is gone, `invalidate()` also resets `warnings()` to `[]` until the next
+successful read.
+
+There is no TTL, background refresh, or file watching. If the file changes
+outside the client, call `refresh()` from your own watcher or before querying
+again. Returned records are independent copies, so mutating them does not
+affect later queries. See `examples/todo-cache.ts`.
 
 ### Projects and contexts
 
@@ -489,7 +509,8 @@ const warnings = todos.warnings();
 It is an additional access path: the [logger](#logging) still receives the
 same warnings. The returned array and its warnings are copies, so callers may
 mutate them freely. A read that fails leaves the previous read's warnings in
-place, and `warnings()` returns `[]` before the first read.
+place, `invalidate()` resets them to `[]`, and `warnings()` returns `[]`
+before the first read.
 
 ### Read errors
 
@@ -547,6 +568,7 @@ bun examples/todo-context.ts
 bun examples/todo-cross.ts
 bun examples/todo-logger.ts
 bun examples/todo-warnings.ts
+bun examples/todo-cache.ts
 bun examples/todo-try.ts
 bun examples/todo-source.ts
 bun examples/todo-filters.ts
