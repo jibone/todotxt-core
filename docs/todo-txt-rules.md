@@ -17,11 +17,12 @@ versions of the examples are in [`examples/rules/`](../examples/rules/).
 | 2. Creation date | `YYYY-MM-DD` immediately after the priority, or first if there is no priority | Yes: the date must exist on the calendar |
 | 3. Projects and contexts | `+name` / `@name` anywhere in the text after the prefix; name is any non-whitespace run | No: start-of-text tags and any whitespace separators are accepted |
 | 4. Completed tasks | Lowercase `x` followed by one literal space; optional completion date, then optional creation date | Mixed: priority after `x` is ignored, completion date is optional |
-| 5. Metadata | `key:value` with exactly one colon, no whitespace, non-empty key and value | Yes: malformed extensions stay in the description |
+| 5. Metadata | The first colon separates a non-empty key (no colons, no whitespace) from a value with no whitespace; the value may be empty and contain colons | Yes: malformed extensions stay in the description |
 
 ## Parsing order
 
-A line is parsed in this order:
+A line is parsed in this order, after one leading byte-order mark (U+FEFF),
+if present, is dropped:
 
 1. **Completed marker**: `x ` at position 0.
 2. **Completion date**: the first `YYYY-MM-DD` token, if present and valid.
@@ -196,26 +197,47 @@ x 2011-03-02 2011-03-01 Task pri:A
 
 ## Rule 5: extra metadata
 
-> Both key and value must consist of non-whitespace characters, which are not
-> colons. Only one colon separates the key and value.
+> `key` must consist of one or more non-whitespace characters, which are not
+> colons. `value` must consist of non-whitespace characters. A single colon
+> separates the `key` and `value`.
 
-A token is metadata when it contains exactly one colon, with a non-empty key and
-a non-empty value, neither containing whitespace or another colon.
+A token is metadata when its first colon separates the key from the rest: the
+key is one or more non-whitespace characters with no colon, and the value is
+everything after that colon — non-whitespace, possibly empty, possibly
+containing further colons. A token without a colon, or whose key would be
+empty, is not metadata.
+
+This follows the specification as revised in November 2026
+([todotxt/todo.txt#91](https://github.com/todotxt/todo.txt/issues/91)), which
+allows colons in the value precisely so a URL can be stored as metadata.
 
 | Input | `data` | `description` |
 | --- | --- | --- |
 | `Pay rent due:2010-01-02 rec:1w` | `{ due: "2010-01-02", rec: "1w" }` | `"Pay rent"` |
-| `Call Mom due:` | `{}` | `"Call Mom due:"` |
+| `Sign up url:https://example.com` | `{ url: "https://example.com" }` | `"Sign up"` |
+| `Call Mom a:b:c` | `{ a: "b:c" }` | `"Call Mom"` |
+| `Call Mom due:` | `{ due: "" }` | `"Call Mom"` |
 | `Call Mom :value` | `{}` | `"Call Mom :value"` |
-| `Call Mom key: value` | `{}` | `"Call Mom key: value"` |
-| `Call Mom a:b:c` | `{}` | `"Call Mom a:b:c"` |
+| `Call Mom key: value` | `{ key: "" }` | `"Call Mom value"` |
 
-A token with exactly one colon is metadata even when it looks like a URL:
+Note the last row: since the value may be empty, a token like `key:` is
+metadata even when more words follow it.
+
+### URLs
+
+A bare URL is metadata too, because its first colon separates the scheme from
+the rest:
 
 ```text
 Call Mom http://example.com
 → data: { http: "//example.com" }, description: "Call Mom"
 ```
+
+The format defines no URL exception, and inventing one would diverge from the
+rule above. To keep a URL addressable instead of swallowed, store it as a
+metadata value (`url:https://example.com`, queryable with `meta("url")`) or
+write it as a Markdown link (`[docs](https://example.com)`). With
+`includeSource`, `raw` always carries the original line.
 
 Metadata values are opaque. The parser does not validate date-like values, so
 `due:2011-99-99` is kept as `{ due: "2011-99-99" }`.
@@ -268,12 +290,31 @@ creation date.
   projection and the original line is not retained. Pass
   `{ includeSource: true }` to `parseLine`, `parseDocument`, or `createTodoTxt`
   to attach `line` (the 1-based physical line number, counting blank lines) and
-  `raw` (the exact line, without a trailing newline or `\r`) to every record.
-  For `parseLine`, the line number comes from the caller via
-  `ParseOptions.line`.
+  `raw` (the exact line, without a trailing newline or `\r`; a leading
+  byte-order mark is kept) to every record. For `parseLine`, the line number
+  comes from the caller via `ParseOptions.line`.
+- **A leading byte-order mark is ignored.** A UTF-8 file saved with a BOM does
+  not hide the priority or dates of its first task: one leading U+FEFF is
+  dropped before the line prefix is parsed. `raw` keeps the mark, so the source
+  stays byte-faithful.
 - **Blank lines are skipped.** `parseDocument` ignores empty and
-  whitespace-only lines, and handles both `\n` and `\r\n`.
-  `parseDocumentResult` counts them in `skippedLines`; its `lineCount` treats a
-  trailing newline as ending the last line rather than starting an empty one.
+  whitespace-only lines, and handles `\n`, `\r\n`, and lone `\r` (classic
+  Mac line endings). `parseDocumentResult` counts them in `skippedLines`; its
+  `lineCount` treats a trailing `\n` or lone `\r` as ending the last line
+  rather than starting an empty one.
 - **Completed tasks can have an empty description.** `x ` alone is complete with
   `description: ""`; a date-only line such as `(A) 2011-03-02` is valid too.
+
+## Limits and non-goals
+
+- **Line length is unbounded.** The parser is O(line length) and imposes no
+  limit. Guarding against pathological lines is the caller's concern.
+- **Whitespace is Unicode-aware in text, ASCII in prefixes.** Description
+  tokenization splits on `\s+`, which includes characters like NBSP and
+  U+FEFF; the priority, completion marker, and date prefixes require a
+  literal ASCII space, per the format.
+- **Encoding is the read hook's concern.** The parse functions take strings;
+  invalid UTF-8 is surfaced or repaired by whatever produces those strings.
+- **There are no comments.** The format does not define them, so a line
+  starting with `#` is a task, not a comment. Supporting comment syntax is a
+  non-goal.

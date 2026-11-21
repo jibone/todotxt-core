@@ -39,6 +39,13 @@ describe("parseLine", () => {
       expect(item.contexts).toEqual(["phone", "someday"]);
     });
 
+    test("strips a leading byte-order mark before the priority", () => {
+      const item = parseLine("\uFEFF(A) Call Mom");
+
+      expect(item.priority).toBe("A");
+      expect(item.description).toBe("Call Mom");
+    });
+
     test("does not parse a priority on a completed task", () => {
       const item = parseLine("x (A) 2011-03-03 Call Mom");
 
@@ -207,11 +214,11 @@ describe("parseLine", () => {
       expect(item.description).toBe("Task");
     });
 
-    test("does not parse a value containing another colon", () => {
+    test("keeps later colons in the value", () => {
       const item = parseLine("Task foo:bar:baz");
 
-      expect(item.data).toEqual({});
-      expect(item.description).toBe("Task foo:bar:baz");
+      expect(item.data).toEqual({ foo: "bar:baz" });
+      expect(item.description).toBe("Task");
     });
 
     test("does not parse dates as extensions", () => {
@@ -311,6 +318,21 @@ describe("parseDocument", () => {
     });
   });
 
+  test("handles lone carriage returns as line endings", () => {
+    const items = parseDocument("(A) Call Mom\rx 2011-03-03 Done\r");
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      priority: "A",
+      description: "Call Mom",
+    });
+    expect(items[1]).toMatchObject({
+      completed: true,
+      completedAt: "2011-03-03",
+      description: "Done",
+    });
+  });
+
   test("returns an empty array for empty input", () => {
     expect(parseDocument("")).toEqual([]);
     expect(parseDocument("\n\r\n   \n")).toEqual([]);
@@ -351,6 +373,13 @@ describe("parseDocumentResult", () => {
 
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]?.line).toBe(3);
+  });
+
+  test("treats a trailing lone carriage return as ending the last line", () => {
+    const result = parseDocumentResult("First\rSecond\r");
+
+    expect(result.lineCount).toBe(2);
+    expect(result.skippedLines).toBe(0);
   });
 
   test("keeps in-line order when one line produces several warnings", () => {

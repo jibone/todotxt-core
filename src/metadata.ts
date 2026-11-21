@@ -1,6 +1,10 @@
 import type { ParseWarningHandler } from "./types.ts";
 
-const EXTENSION_PATTERN = /^([^:\s]+):([^:\s]+)$/;
+/**
+ * A `key:value` extension: the first colon separates a non-empty, colon-free
+ * key from a value that may be empty and may contain further colons.
+ */
+const EXTENSION_PATTERN = /^([^:\s]+):(\S*)$/;
 
 /** Metadata collected from a task's text. */
 export interface TodoMetadata {
@@ -27,8 +31,8 @@ function tokenize(text: string): string[] {
  * True when a whitespace-delimited token is inline metadata.
  *
  * Inline metadata is a project (`+name`), a context (`@name`), or a
- * `key:value` extension. Bare `+`/`@` tokens and values containing another
- * colon are not metadata.
+ * `key:value` extension. Bare `+`/`@` tokens and empty keys are not
+ * metadata.
  */
 export function isMetadataToken(token: string): boolean {
   if (token.startsWith("+") && token.length > 1) {

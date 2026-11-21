@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseDocument, parseLine } from "./parse.ts";
+import { parseDocument, parseDocumentResult, parseLine } from "./parse.ts";
 import type { ParseWarning, TodoRecord } from "./types.ts";
 
 /**
@@ -471,28 +471,40 @@ describe("Rule 5: extra metadata is key:value", () => {
     );
   });
 
-  test("requires a non-empty key and value", () => {
-    expect(parseLine("Call Mom due:")).toEqual(
-      record({ description: "Call Mom due:" }),
-    );
+  test("requires a non-empty key", () => {
     expect(parseLine("Call Mom :value")).toEqual(
       record({ description: "Call Mom :value" }),
     );
+  });
+
+  test("allows an empty value", () => {
+    expect(parseLine("Call Mom due:")).toEqual(
+      record({ description: "Call Mom", data: { due: "" } }),
+    );
     expect(parseLine("Call Mom key: value")).toEqual(
-      record({ description: "Call Mom key: value" }),
+      record({ description: "Call Mom value", data: { key: "" } }),
     );
   });
 
-  test("rejects values that contain another colon", () => {
+  test("splits at the first colon, keeping later colons in the value", () => {
     expect(parseLine("Call Mom a:b:c")).toEqual(
-      record({ description: "Call Mom a:b:c" }),
+      record({ description: "Call Mom", data: { a: "b:c" } }),
     );
     expect(parseLine("Call Mom TODO:2011-03-02T10:00")).toEqual(
-      record({ description: "Call Mom TODO:2011-03-02T10:00" }),
+      record({ description: "Call Mom", data: { TODO: "2011-03-02T10:00" } }),
     );
   });
 
-  test("parses tokens with exactly one colon, even when they look like URLs", () => {
+  test("keeps a URL as the value of a metadata key", () => {
+    expect(parseLine("Sign up url:https://example.com")).toEqual(
+      record({
+        description: "Sign up",
+        data: { url: "https://example.com" },
+      }),
+    );
+  });
+
+  test("a bare URL is still metadata, per the format", () => {
     expect(parseLine("Call Mom http://example.com")).toEqual(
       record({
         description: "Call Mom",
@@ -561,6 +573,64 @@ describe("Documented strictness and leniency", () => {
       record({ completed: true, completedAt: "2011-03-03", description: "Done" }),
     ]);
   });
+
+  test("lone carriage returns end lines", () => {
+    expect(parseDocument("(A) Call Mom\rx 2011-03-03 Done\r")).toEqual([
+      record({ priority: "A", description: "Call Mom" }),
+      record({ completed: true, completedAt: "2011-03-03", description: "Done" }),
+    ]);
+  });
+
+  test("only the first unicode whitespace character can be a BOM", () => {
+    expect(parseLine("Call\uFEFFMom\u00A0now")).toEqual(
+      record({ description: "Call Mom now" }),
+    );
+  });
+
+  test("a line starting with # is a task, not a comment", () => {
+    expect(parseLine("# fix the parser +core")).toEqual(
+      record({ description: "# fix the parser", projects: ["core"] }),
+    );
+  });
+});
+
+describe("A leading byte-order mark is stripped", () => {
+  test("does not hide the priority or creation date", () => {
+    expect(parseLine("\uFEFF(A) 2011-03-02 Call Mom +Family")).toEqual(
+      record({
+        priority: "A",
+        createdAt: "2011-03-02",
+        description: "Call Mom",
+        projects: ["Family"],
+      }),
+    );
+  });
+
+  test("does not hide the completion marker or date", () => {
+    expect(parseLine("\uFEFFx 2011-03-03 Done")).toEqual(
+      record({
+        completed: true,
+        completedAt: "2011-03-03",
+        description: "Done",
+      }),
+    );
+  });
+
+  test("parses a BOM file through parseDocument", () => {
+    expect(
+      parseDocument("\uFEFF(A) Call Mom\r\nx 2011-03-03 Done\r\n"),
+    ).toEqual([
+      record({ priority: "A", description: "Call Mom" }),
+      record({ completed: true, completedAt: "2011-03-03", description: "Done" }),
+    ]);
+  });
+
+  test("a BOM-only line counts as blank", () => {
+    const result = parseDocumentResult("\uFEFF\n(A) Call Mom");
+
+    expect(result.lineCount).toBe(2);
+    expect(result.skippedLines).toBe(1);
+  });
 });
 
 describe("Source metadata is opt-in", () => {
@@ -612,6 +682,26 @@ describe("Source metadata is opt-in", () => {
         description: "Done",
         line: 2,
         raw: "x 2011-03-03 Done",
+      }),
+    ]);
+  });
+
+  test("raw keeps a leading byte-order mark", () => {
+    expect(parseLine("\uFEFF(A) Call Mom", { includeSource: true })).toEqual(
+      record({
+        priority: "A",
+        description: "Call Mom",
+        raw: "\uFEFF(A) Call Mom",
+      }),
+    );
+    expect(
+      parseDocument("\uFEFF(A) Call Mom\n", { includeSource: true }),
+    ).toEqual([
+      record({
+        priority: "A",
+        description: "Call Mom",
+        line: 1,
+        raw: "\uFEFF(A) Call Mom",
       }),
     ]);
   });

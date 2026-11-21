@@ -12,12 +12,15 @@ describe("isMetadataToken", () => {
     expect(isMetadataToken("+Family")).toBe(true);
     expect(isMetadataToken("@phone")).toBe(true);
     expect(isMetadataToken("due:2011-03-05")).toBe(true);
+    expect(isMetadataToken("foo:bar:baz")).toBe(true);
+    expect(isMetadataToken("url:https://example.com")).toBe(true);
+    expect(isMetadataToken("due:")).toBe(true);
   });
 
-  test("does not recognize bare markers or malformed extensions", () => {
+  test("does not recognize bare markers or empty keys", () => {
     expect(isMetadataToken("+")).toBe(false);
     expect(isMetadataToken("@")).toBe(false);
-    expect(isMetadataToken("foo:bar:baz")).toBe(false);
+    expect(isMetadataToken(":value")).toBe(false);
   });
 
   test("does not recognize emails or arithmetic as metadata", () => {

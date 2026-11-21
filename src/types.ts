@@ -174,7 +174,9 @@ export interface TodoRecord {
    */
   line?: number;
   /**
-   * Exact original line, without a trailing newline or a trailing `\r`.
+   * Exact original line, without a trailing newline or a trailing `\r`. A
+   * leading byte-order mark (U+FEFF) is kept, so the source stays
+   * byte-faithful even when the parser strips it.
    *
    * Present only when parsing with `includeSource`. Leading and trailing
    * whitespace and tag order are preserved, unlike
