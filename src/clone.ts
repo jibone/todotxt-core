@@ -1,8 +1,10 @@
 import type { TodoRecord } from "./types.ts";
 
 /** Copy a record so callers cannot mutate the client's cached snapshot. */
-export function cloneRecord(todo: TodoRecord): TodoRecord {
-  const copy: TodoRecord = {
+export function cloneRecord<TData extends Record<string, string>>(
+  todo: TodoRecord<TData>,
+): TodoRecord<TData> {
+  const copy: TodoRecord<TData> = {
     completed: todo.completed,
     priority: todo.priority,
     completedAt: todo.completedAt,
@@ -25,6 +27,8 @@ export function cloneRecord(todo: TodoRecord): TodoRecord {
 }
 
 /** Copy every record in `records`. */
-export function cloneRecords(records: readonly TodoRecord[]): TodoRecord[] {
-  return records.map(cloneRecord);
+export function cloneRecords<TData extends Record<string, string>>(
+  records: readonly TodoRecord<TData>[],
+): TodoRecord<TData>[] {
+  return records.map(cloneRecord<TData>);
 }

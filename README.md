@@ -18,10 +18,14 @@ npm install @jibone/todotxt-core
 bun add @jibone/todotxt-core
 ```
 
-The package has no runtime dependencies and uses no Node-specific APIs. It runs
-in Node 20+, Bun, Deno, and any other runtime that can provide the read/write
-hooks. Browser support is not officially targeted, but hooks can be backed by
-any storage you like.
+The package is ESM-only: there is no CommonJS build, and if one is ever
+needed it will ship as a separate build rather than a breaking conversion.
+The core entry has no runtime dependencies and uses no Node-specific APIs.
+It runs in Node 20+, Bun, Deno, and any other runtime that can provide the
+read/write hooks. Browser support is not officially targeted, but hooks can be
+backed by any storage you like. The optional [`node` adapter](#node-adapter)
+is the only part that touches `node:fs/promises`, and it is a separate
+subpath export.
 
 ## Usage
 
@@ -52,6 +56,9 @@ const todos = createTodoTxt({
   write: (contents) => writeFile("todo.txt", contents),
 });
 ```
+
+In Node you can skip the hook boilerplate entirely with the
+[`node` adapter](#node-adapter).
 
 `write` is optional until the write APIs are implemented, so read-only clients
 can omit it. `logger` is optional too and silent when omitted; see
@@ -110,6 +117,68 @@ parseLine("(A) Call Mom", { includeSource: true, line: 7 });
 
 `parseLine` only attaches `line` when you supply it via `ParseOptions.line`;
 `parseDocument` numbers lines itself.
+
+### Typing metadata
+
+`data` is `Record<string, string>` by default. Consumers who know which keys
+their file uses can type it with the `TData` parameter, which flows through
+the client and every query:
+
+```ts
+type TaskData = Record<string, string> & { due: string; rec: string };
+
+const todos = createTodoTxt<TaskData>({
+  read: () => readFile("todo.txt", "utf8"),
+});
+
+const task = await todos.first();
+task?.data.due; // string
+```
+
+`TData` is a type-level assertion, not a validation: the parser never checks
+that the declared keys exist, so a missing key reads as `undefined` at
+runtime. Declare it as a type with an index signature, such as
+`Record<string, string> & { due: string }` or an interface extending
+`Record<string, string>`; a plain interface does not satisfy the constraint.
+The same parameter exists on `TodoRecord<TData>` for hand-built records, and
+on `createNodeTodoTxt`.
+
+## Node adapter
+
+Every Node consumer otherwise writes the same `read` hook boilerplate, so the
+package ships an optional subpath that supplies it:
+
+```ts
+import { createNodeTodoTxt } from "@jibone/todotxt-core/node";
+
+const todos = createNodeTodoTxt("todo.txt");
+```
+
+The adapter reads through `node:fs/promises`. `path` is a file path or
+`URL`; `encoding` selects the file's character encoding (default `"utf8"`);
+and `includeSource`, `caseSensitive`, and `logger` are the same options
+[`createTodoTxt`](#usage) accepts. Every client behavior — caching,
+filtering, warnings — is unchanged. `write` is not exposed until the write
+APIs exist.
+
+Filesystem errors propagate untouched: `readFile` rejects with `Error`
+instances carrying a `code` such as `ENOENT`, which the client passes through
+rather than wrapping in `TodoReadError`:
+
+```ts
+try {
+  await todos.all();
+} catch (error) {
+  (error as { code?: string }).code; // "ENOENT"
+}
+```
+
+The same subpath works under Bun, which implements `node:fs/promises`, so no
+separate Bun adapter is needed. The runnable versions are
+[`examples/node/todo-node-adapter.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/node/todo-node-adapter.ts)
+(Node) and
+[`examples/todo-node-adapter.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/todo-node-adapter.ts)
+(Bun).
 
 ## Querying
 
@@ -559,6 +628,45 @@ rule-by-rule interpretation is documented in
 Writing is not implemented yet. The `write` hook is optional for now and will
 become required for the write APIs when they land.
 
+## Formatting
+
+`formatRecord` and `formatDocument` turn records back into todo.txt text for
+display, export, or diffing:
+
+```ts
+import { formatDocument, formatRecord } from "@jibone/todotxt-core";
+
+const record = parseLine("(A) 2011-03-02 Call Mom +Family @phone due:2011-03-05");
+
+formatRecord(record);
+// "(A) 2011-03-02 Call Mom +Family @phone due:2011-03-05"
+
+formatDocument(records);                       // joined with "\n" + trailing "\n"
+formatDocument(records, { eol: "\r\n" });      // CRLF instead
+formatRecord(record, { includeMetadata: false }); // drop key:value tags
+```
+
+The output is canonical, not lossless. Parts emit in a defined order —
+`x <completedAt> (<priority>) <createdAt> <description> +projects @contexts
+key:value` — and projects, contexts, and metadata keys are alphabetized, so
+records with the same fields format to the same string. Tags always reappear
+after the description, never at their source positions, because the parser
+strips them out of `description`. The output is stable: formatting a reparse
+of formatted output produces the same document, even though the reparsed
+records may list tags in a different order than the source file did.
+
+No round-trip fidelity is claimed. `formatRecord` always formats from the
+record fields, even when `raw` is present, so a mutated record never formats
+to stale text. Use the exact source line when you have it:
+
+```ts
+const line = todo.raw ?? formatRecord(todo);
+```
+
+The full canonicalization rules are documented in
+[How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md#formatting-canonical-output).
+See `examples/todo-format.ts`.
+
 ## Examples
 
 ```sh
@@ -574,6 +682,8 @@ bun examples/todo-source.ts
 bun examples/todo-filters.ts
 bun examples/todo-sort.ts
 bun examples/todo-summary.ts
+bun examples/todo-node-adapter.ts
+bun examples/todo-format.ts
 ```
 
 Each format rule also has a runnable example:
@@ -591,10 +701,13 @@ Node.js examples show the same API with `node:fs/promises` hooks:
 ```sh
 node examples/node/todo-all.ts
 node examples/node/todo-logger.ts
+node examples/node/todo-node-adapter.ts
 ```
 
 These require Node 22.18+ for native TypeScript type stripping; the library
-itself still runs on Node 20+.
+itself still runs on Node 20+. `todo-node-adapter.ts` uses the
+[`node` adapter](#node-adapter), and `examples/todo-node-adapter.ts` runs the
+same adapter under Bun.
 
 ## Development
 

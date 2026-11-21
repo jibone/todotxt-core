@@ -1,9 +1,9 @@
 # AGENTS.md
 
 ## Project
-`todotxt-core` is a todo.txt parser library intended for publication as an npm package. Bun + TypeScript, ESM-only, with a single entrypoint at `index.ts`.
+`todotxt-core` is a todo.txt parser library intended for publication as an npm package. Bun + TypeScript, ESM-only, with the core entrypoint at `index.ts` and a Node adapter subpath at `src/node.ts` (`@jibone/todotxt-core/node`).
 
-Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). There is no separate `TodoItem`/raw representation; the optional `line`/`raw` source fields are attached to records only when the caller opts in with `includeSource` (parser `ParseOptions` or client `TodoClientOptions`). `createTodoTxt()` returns a lazy, chainable query API over parsed records:
+Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). There is no separate `TodoItem`/raw representation; the optional `line`/`raw` source fields are attached to records only when the caller opts in with `includeSource` (parser `ParseOptions` or client `TodoClientOptions`). `TodoRecord` is generic over its metadata (`TodoRecord<TData>`); supplying `TData` through `createTodoTxt`/`createNodeTodoTxt` types `data` for known keys and is an assertion, not a validation. `createTodoTxt()` returns a lazy, chainable query API over parsed records:
 
 - `all()`, `pending()`, `completed()`, `project(name)`, `context(name)`
 - `notProject(name)`, `notContext(name)`, `priority(letter)`, `search(text)`,
@@ -34,18 +34,25 @@ overridable per call or client-wide via `caseSensitive`; `search` is
 independently case-insensitive by default.
 
 The package is published to npm as `@jibone/todotxt-core`. It is ESM-only, built
-with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE.
+with `tsdown` into `dist/`, and ships only `dist` plus README/LICENSE. The
+Node adapter (`createNodeTodoTxt`) is a subpath export that reads through
+`node:fs/promises`; it works under Bun too, so there is no separate Bun
+subpath. `formatRecord`/`formatDocument` serialize records back to canonical
+todo.txt lines: defined part order, alphabetized tags, lossy in a documented
+way, stable through a reparse, and never claiming round-trip fidelity
+(`todo.raw ?? formatRecord(todo)` is the idiom for exact source).
 
 ## Commands
 - Install deps: `bun install`
 - Typecheck: `bunx tsc` (or `bun run typecheck`; `noEmit` is set in `tsconfig.json`)
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
-- Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`)
+- Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`, and `dist/node.mjs` + `dist/node.d.mts` for the adapter)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-warnings.ts`, `bun examples/todo-cache.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts` and `node examples/node/todo-logger.ts` (Node 22.18+ for type stripping).
+- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-warnings.ts`, `bun examples/todo-cache.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`, `bun examples/todo-node-adapter.ts`, `bun examples/todo-format.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts`, `node examples/node/todo-logger.ts`, and `node examples/node/todo-node-adapter.ts` (Node 22.18+ for type stripping).
 
 ## Gotchas
-- Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`. Update both when parser behavior changes.
+- Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`; canonical output (formatting) is codified in `src/format.test.ts`. Update the doc and tests when parser or formatting behavior changes.
+- The build is a `tsdown` config array: the core entry uses `platform: "neutral"` and the Node adapter entry (`src/node.ts`) uses `platform: "node"`. `clean` must stay on the first config only — a second clean would delete the first entry's output before the second runs.
 - There is no linter or formatter. CI runs typecheck, tests, build, and package validation from `.github/workflows/ci.yml`.
 - Since this is published as a library, keep `index.ts` exporting the public API rather than running side effects when imported.
 - `verbatimModuleSyntax` is enabled: use `import type` for type-only imports.
