@@ -319,6 +319,256 @@ describe("in-memory cache", () => {
   });
 });
 
+describe("cache lifecycle", () => {
+  test("refresh() returns fresh records and updates the cache", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return `Task ${readCalls}`;
+      },
+      write: () => {},
+    });
+
+    const first = await todos.pending();
+    expect(first[0]?.description).toBe("Task 1");
+    expect(readCalls).toBe(1);
+
+    const refreshed = await todos.refresh();
+
+    expect(refreshed[0]?.description).toBe("Task 2");
+    expect(readCalls).toBe(2);
+
+    const cached = await todos.pending();
+
+    expect(cached[0]?.description).toBe("Task 2");
+    expect(readCalls).toBe(2);
+  });
+
+  test("invalidate() followed by a query triggers exactly one new read", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return `Task ${readCalls}`;
+      },
+      write: () => {},
+    });
+
+    await todos.pending();
+    expect(readCalls).toBe(1);
+
+    todos.invalidate();
+
+    const reread = await todos.pending();
+
+    expect(reread[0]?.description).toBe("Task 2");
+    expect(readCalls).toBe(2);
+
+    const cached = await todos.completed();
+
+    expect(cached).toEqual([]);
+    expect(readCalls).toBe(2);
+  });
+
+  test("invalidate() resets warnings until the next read repopulates them", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return readCalls % 2 === 1 ? "Task due:a due:b" : "Clean task";
+      },
+    });
+
+    await todos.pending();
+    expect(todos.warnings()).toHaveLength(1);
+
+    todos.invalidate();
+    expect(todos.warnings()).toEqual([]);
+
+    await todos.pending();
+    expect(readCalls).toBe(2);
+    expect(todos.warnings()).toEqual([]);
+
+    await todos.refresh();
+    expect(readCalls).toBe(3);
+    expect(todos.warnings()).toHaveLength(1);
+  });
+
+  test("refresh() returns copies that cannot mutate the cache", async () => {
+    const todos = createTodoTxt({
+      read: () => "Call Mom +Family due:2011-03-05",
+      write: () => {},
+    });
+
+    const refreshed = await todos.refresh();
+    refreshed[0]!.description = "Changed";
+    refreshed[0]!.projects.push("Other");
+    refreshed[0]!.data.due = "2099-01-01";
+
+    const cached = await todos.pending();
+
+    expect(cached[0]?.description).toBe("Call Mom");
+    expect(cached[0]?.projects).toEqual(["Family"]);
+    expect(cached[0]?.data).toEqual({ due: "2011-03-05" });
+    expect(cached[0]).not.toBe(refreshed[0]);
+  });
+
+  test("concurrent queries during a refresh() share one read", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: async () => {
+        readCalls += 1;
+        await Promise.resolve();
+        return "Shared task";
+      },
+      write: () => {},
+    });
+
+    const [refreshed, pending, completed] = await Promise.all([
+      todos.refresh(),
+      todos.pending(),
+      todos.completed(),
+    ]);
+
+    expect(refreshed).toHaveLength(1);
+    expect(pending).toHaveLength(1);
+    expect(completed).toHaveLength(0);
+    expect(readCalls).toBe(1);
+  });
+
+  test("concurrent queries after invalidate() share one new read", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: async () => {
+        readCalls += 1;
+        await Promise.resolve();
+        return `Task ${readCalls}`;
+      },
+      write: () => {},
+    });
+
+    await todos.pending();
+    expect(readCalls).toBe(1);
+
+    todos.invalidate();
+
+    const [pending, completed] = await Promise.all([
+      todos.pending(),
+      todos.completed(),
+    ]);
+
+    expect(pending[0]?.description).toBe("Task 2");
+    expect(completed).toEqual([]);
+    expect(readCalls).toBe(2);
+  });
+
+  test("a read that resolves after invalidate() cannot overwrite newer state", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: async () => {
+        readCalls += 1;
+        if (readCalls === 1) {
+          // The first read is slower than the read that replaces it.
+          await Promise.resolve();
+          await Promise.resolve();
+          return "Stale task due:a due:b";
+        }
+        return "Fresh task";
+      },
+      write: () => {},
+    });
+
+    const stale = todos.all(); // read 1, in flight
+    todos.invalidate(); // orphans it
+
+    const fresh = await todos.all(); // read 2, faster
+    const staleRecords = await stale;
+
+    expect(fresh[0]?.description).toBe("Fresh task");
+    expect(staleRecords[0]?.description).toBe("Stale task");
+    // The stale read carries a duplicate-key warning that must never land.
+    expect(todos.warnings()).toEqual([]);
+
+    const cached = await todos.pending();
+
+    expect(cached[0]?.description).toBe("Fresh task");
+    expect(readCalls).toBe(2);
+  });
+
+  test("a query started before invalidate() resolves with the old snapshot", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: async () => {
+        readCalls += 1;
+        if (readCalls === 1) {
+          await Promise.resolve();
+          return "First task";
+        }
+        return "Second task";
+      },
+      write: () => {},
+    });
+
+    const started = Promise.resolve(todos.pending());
+    await Promise.resolve(); // the lazy query has now started its read
+    todos.invalidate();
+
+    const records = await started;
+
+    expect(records[0]?.description).toBe("First task");
+
+    const reread = await todos.pending();
+
+    expect(reread[0]?.description).toBe("Second task");
+    expect(readCalls).toBe(2);
+  });
+
+  test("invalidate() before the first read only delays it", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return "Task";
+      },
+      write: () => {},
+    });
+
+    todos.invalidate();
+    expect(todos.warnings()).toEqual([]);
+
+    await todos.pending();
+    await todos.projects();
+
+    expect(readCalls).toBe(1);
+  });
+
+  test("a failed refresh() leaves the previous cache in place", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        if (readCalls === 2) {
+          throw new Error("read failed");
+        }
+        return "Stable task";
+      },
+      write: () => {},
+    });
+
+    await todos.pending();
+    expect(readCalls).toBe(1);
+
+    await expect(todos.refresh()).rejects.toThrow("read failed");
+    expect(readCalls).toBe(2);
+
+    const cached = await todos.pending();
+
+    expect(cached[0]?.description).toBe("Stable task");
+    expect(readCalls).toBe(2);
+  });
+});
+
 describe("includeSource", () => {
   test("adds line and raw to every record", async () => {
     const todos = createTodoTxt({

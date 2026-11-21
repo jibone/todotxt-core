@@ -22,13 +22,34 @@ export interface TodoTxtClient {
   /** Read fresh todo.txt contents, replace the cache, and return every record. */
   all: () => Promise<TodoRecord[]>;
   /**
+   * Re-read the file, replace the cache, and return the fresh records.
+   *
+   * Equivalent to {@link TodoTxtClient.all} in effect; it exists to state the
+   * intent and for future divergence (for example a future
+   * `refresh({ silent: true })`). Returned records are copies, so callers
+   * may mutate them without affecting the cache. A failed refresh rejects
+   * and leaves the previous cache in place.
+   */
+  refresh: () => Promise<TodoRecord[]>;
+  /**
+   * Drop the cached snapshot without reading; the next query re-reads.
+   *
+   * A read that was in flight when `invalidate()` was called still resolves
+   * for its callers but can no longer populate the cache, and queries
+   * started before the call may still resolve with the old snapshot. Since
+   * the snapshot is gone, {@link TodoTxtClient.warnings} also resets to
+   * empty until the next successful read.
+   */
+  invalidate: () => void;
+  /**
    * Warnings from the most recent successful read, in document order.
    *
-   * Empty before the first read and after a read without warnings. A failed
-   * read leaves the previous read's warnings in place. The returned array and
-   * its warnings are copies, so callers may mutate them without affecting
-   * later calls. A `logger`, when supplied, still receives warnings as they
-   * are found; this is an additional access path, not a replacement.
+   * Empty before the first read, after a read without warnings, and after
+   * {@link TodoTxtClient.invalidate}. A failed read leaves the previous
+   * read's warnings in place. The returned array and its warnings are
+   * copies, so callers may mutate them without affecting later calls. A
+   * `logger`, when supplied, still receives warnings as they are found;
+   * this is an additional access path, not a replacement.
    */
   warnings: () => ParseWarning[];
   /** Query only records that are not completed, using the cached snapshot. */
@@ -104,8 +125,12 @@ export interface TodoTxtClient {
  *
  * Parsed records are cached in memory per client. The first query loads and
  * parses the file; later queries reuse that snapshot. {@link TodoTxtClient.all}
- * always reads fresh contents and replaces the cache, so it can be used to
- * refresh after the underlying file changes.
+ * and {@link TodoTxtClient.refresh} always read fresh contents and replace the
+ * cache, so they can pick up changes to the underlying file, while
+ * {@link TodoTxtClient.invalidate} drops the cache without reading so the
+ * next query re-reads. Reads that settle after invalidation never repopulate
+ * the cache, and queries started before invalidation may still resolve with
+ * the old snapshot.
  *
  * Every line is parsed into a {@link TodoRecord} when the cache is populated.
  * Filters such as {@link TodoQuery.pending} and {@link TodoQuery.project}
@@ -185,7 +210,7 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
     return records;
   };
 
-  const refresh = (): Promise<TodoRecord[]> => {
+  const startRead = (): Promise<TodoRecord[]> => {
     const promise = readFresh();
     inFlight = promise;
 
@@ -209,11 +234,24 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
       return Promise.resolve(cache);
     }
 
-    return refresh();
+    return startRead();
   };
 
   const all = async (): Promise<TodoRecord[]> =>
-    cloneRecords(await refresh());
+    cloneRecords(await startRead());
+
+  const refresh = async (): Promise<TodoRecord[]> =>
+    cloneRecords(await startRead());
+
+  const invalidate = (): void => {
+    // Bumping the generation orphans any in-flight read: its captured value
+    // becomes stale, so it cannot repopulate the cache or the warnings when
+    // it settles. It still resolves for its own callers.
+    generation += 1;
+    cache = undefined;
+    inFlight = undefined;
+    lastWarnings = [];
+  };
 
   const warnings = (): ParseWarning[] =>
     lastWarnings.map((warning) => ({
@@ -228,6 +266,8 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
 
   return {
     all,
+    refresh,
+    invalidate,
     warnings,
     pending: query.pending,
     completed: query.completed,
