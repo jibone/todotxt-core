@@ -341,9 +341,15 @@ function sortKey(todo: TodoRecord, field: NullableSortField): string | null {
   }
 }
 
-/** Read a metadata value as the nullable sort key for `sortByMeta`. */
+/**
+ * Read a metadata value as the nullable sort key for `sortByMeta`.
+ *
+ * Own keys only: an inherited member such as `toString` never counts, so
+ * records without the key sort as missing rather than by some inherited
+ * value.
+ */
 function metaSortKey(todo: TodoRecord, key: string): string | null {
-  return todo.data[key] ?? null;
+  return Object.hasOwn(todo.data, key) ? todo.data[key]! : null;
 }
 
 /**
@@ -675,10 +681,12 @@ export function createTodoQuery<
       });
     },
     meta: (key, value) => {
+      // Own keys only, so inherited members such as `toString` never match.
       const filter: TodoFilter =
         value === undefined
           ? (todo) => Object.hasOwn(todo.data, key)
-          : (todo) => todo.data[key] === value;
+          : (todo) =>
+              Object.hasOwn(todo.data, key) && todo.data[key] === value;
 
       return createTodoQuery<TData>(load, {
         ...state,

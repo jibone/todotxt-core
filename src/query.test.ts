@@ -652,6 +652,21 @@ describe("metadata filters", () => {
     expect(await todos.hasMeta("missing")).toEqual([]);
   });
 
+  test("presence and value checks use own keys, never inherited ones", async () => {
+    const todos = createClient(
+      ["Shadowed toString:hi", "Plain task"].join("\n"),
+    );
+
+    expect(descriptions(await todos.hasMeta("toString"))).toEqual([
+      "Shadowed",
+    ]);
+    expect(descriptions(await todos.meta("toString", "hi"))).toEqual([
+      "Shadowed",
+    ]);
+    expect(await todos.hasMeta("constructor")).toEqual([]);
+    expect(await todos.meta("valueOf")).toEqual([]);
+  });
+
   test("composes with other filters", async () => {
     const todos = createClient([
       "(A) Call Mom who:alice",

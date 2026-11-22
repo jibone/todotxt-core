@@ -21,6 +21,12 @@ show("Call Mom :value");
 heading("Duplicate keys: the last value wins, with a warning");
 show("Task due:2010-01-02 due:2010-02-02");
 
+heading("__proto__ is reserved; the token stays in the description");
+show("Call Mom __proto__:polluted");
+
+heading("Names of inherited properties are ordinary metadata");
+show("task constructor:shadowed prototype:y toString:hi");
+
 heading("A bare URL is still metadata, per the format");
 show("Call Mom http://example.com");
 

@@ -32,10 +32,12 @@ export type TodoLogger = (
  *   last value wins.
  * - `invalid-date`: a leading `YYYY-MM-DD` value is not a real calendar date.
  *   The value is not used as a date and remains part of the description.
+ * - `reserved-key`: a `key:value` token uses the reserved key `__proto__`.
+ *   The token is not stored in `data` and stays in the description.
  */
 export interface ParseWarning {
   /** Stable identifier for programmatic handling. */
-  code: "duplicate-metadata-key" | "invalid-date";
+  code: "duplicate-metadata-key" | "invalid-date" | "reserved-key";
   /** Human-readable description of the issue. */
   message: string;
   /** 1-based physical line number, when called through {@link parseDocument}. */

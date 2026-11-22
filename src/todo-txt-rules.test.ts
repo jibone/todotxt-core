@@ -548,6 +548,78 @@ describe("Rule 5: extra metadata is key:value", () => {
   });
 });
 
+describe("Rule 5: __proto__ is a reserved metadata key", () => {
+  test("keeps a __proto__ token in the description and warns", () => {
+    const { warnings, onWarning } = collectWarnings();
+    const item = parseLine("task __proto__:polluted", onWarning);
+
+    expect(item).toEqual(record({ description: "task __proto__:polluted" }));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      code: "reserved-key",
+      message:
+        'Reserved metadata key "__proto__"; the token stays in the description.',
+      meta: { key: "__proto__", value: "polluted" },
+    });
+    expect(warnings[0]?.line).toBeUndefined();
+  });
+
+  test("warns once per __proto__ token, never as a duplicate key", () => {
+    const { warnings, onWarning } = collectWarnings();
+    const item = parseLine("a __proto__:x __proto__:y", onWarning);
+
+    expect(item).toEqual(record({ description: "a __proto__:x __proto__:y" }));
+    expect(warnings.map((warning) => warning.code)).toEqual([
+      "reserved-key",
+      "reserved-key",
+    ]);
+  });
+
+  test("reports reserved-key warnings with a 1-based line number", () => {
+    const { warnings, onWarning } = collectWarnings();
+    parseDocument("(A) First\n\ntask __proto__:polluted", onWarning);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.line).toBe(3);
+  });
+
+  test("parsing never modifies Object.prototype", () => {
+    parseDocument(
+      "task __proto__:polluted constructor:shadowed toString:hi prototype:y",
+      collectWarnings().onWarning,
+    );
+
+    expect(Object.hasOwn(Object.prototype, "polluted")).toBe(false);
+    expect(({} as Record<string, string>).polluted).toBeUndefined();
+    expect(({} as Record<string, string>).shadowed).toBeUndefined();
+  });
+
+  test("stores constructor, prototype, and toString as ordinary metadata", () => {
+    expect(
+      parseLine("task constructor:shadowed prototype:y toString:hi"),
+    ).toEqual(
+      record({
+        description: "task",
+        data: { constructor: "shadowed", prototype: "y", toString: "hi" },
+      }),
+    );
+  });
+
+  test("duplicate warnings still apply to inherited property names", () => {
+    const { warnings, onWarning } = collectWarnings();
+    const item = parseLine("task toString:a toString:b", onWarning);
+
+    expect(item).toEqual(
+      record({ description: "task", data: { toString: "b" } }),
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      code: "duplicate-metadata-key",
+      meta: { key: "toString", previousValue: "a", value: "b" },
+    });
+  });
+});
+
 describe("Documented strictness and leniency", () => {
   test("dates and tags are only parsed after the line prefix", () => {
     expect(parseLine("Call Mom 2011-03-02")).toEqual(
