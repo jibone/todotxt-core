@@ -655,6 +655,24 @@ const todos = createTodoTxt({
 Rejecting from the `read` hook surfaces through the client like any other
 read failure — see [Read errors](#read-errors).
 
+### Parsed text is not sanitized
+
+The parser extracts text as-is: a description, a project or context name,
+or a `key:value` value can contain any non-whitespace character, including
+control characters such as ANSI escape sequences (`\x1b[31m`). Warning
+messages and their `meta` embed keys and values from the file; the client
+forwards them to the supplied `logger` and stores them for
+[`warnings()`](#warnings-and-errors-as-data), and with
+[source metadata](#source-metadata) the `raw` field carries the exact
+original line, control bytes included.
+
+Whitespace-delimited tokens can never contain CR or LF, and
+`parseDocument` splits lines before parsing, so file content cannot forge
+log lines by injecting newlines.
+
+Consumers rendering records, warnings, or log messages to a terminal,
+HTML, or a log must escape or sanitize them themselves.
+
 Writing is not implemented yet. The `write` hook is optional for now and will
 become required for the write APIs when they land.
 
