@@ -208,6 +208,25 @@ describe("sortByMeta", () => {
     ]);
   });
 
+  test("an inherited name sorts as missing when no record carries it", async () => {
+    const todos = createClient(
+      ["Alpha toString:x1", "Beta", "Gamma toString:x3"].join("\n"),
+    );
+
+    // "Beta" has no own toString key. It must sort as missing — last in both
+    // directions — not as the value of the inherited member.
+    expect(descriptions(await todos.sortByMeta("toString"))).toEqual([
+      "Alpha",
+      "Gamma",
+      "Beta",
+    ]);
+    expect(descriptions(await todos.sortByMeta("toString", "desc"))).toEqual([
+      "Gamma",
+      "Alpha",
+      "Beta",
+    ]);
+  });
+
   test("a key no record carries leaves file order intact", async () => {
     const todos = createClient();
 

@@ -20,7 +20,7 @@ The reverse direction — turning records back into text — is documented in
 | 2. Creation date | `YYYY-MM-DD` immediately after the priority, or first if there is no priority | Yes: the date must exist on the calendar |
 | 3. Projects and contexts | `+name` / `@name` anywhere in the text after the prefix; name is any non-whitespace run | No: start-of-text tags and any whitespace separators are accepted |
 | 4. Completed tasks | Lowercase `x` followed by one literal space; optional completion date, then optional creation date | Mixed: priority after `x` is ignored, completion date is optional |
-| 5. Metadata | The first colon separates a non-empty key (no colons, no whitespace) from a value with no whitespace; the value may be empty and contain colons | Yes: malformed extensions stay in the description |
+| 5. Metadata | The first colon separates a non-empty key (no colons, no whitespace) from a value with no whitespace; the value may be empty and contain colons; the `__proto__` key is reserved | Yes: malformed extensions and `__proto__` tokens stay in the description |
 
 ## Parsing order
 
@@ -222,6 +222,7 @@ allows colons in the value precisely so a URL can be stored as metadata.
 | `Call Mom due:` | `{ due: "" }` | `"Call Mom"` |
 | `Call Mom :value` | `{}` | `"Call Mom :value"` |
 | `Call Mom key: value` | `{ key: "" }` | `"Call Mom value"` |
+| `Call Mom __proto__:polluted` | `{}` | `"Call Mom __proto__:polluted"` |
 
 Note the last row: since the value may be empty, a token like `key:` is
 metadata even when more words follow it.
@@ -255,6 +256,34 @@ Task due:2010-01-02 due:2010-02-02
 → data: { due: "2010-02-02" }
 ```
 
+### Reserved keys
+
+`__proto__` is never a metadata key. Assigning it on a plain object does not
+create a property — the write goes through the prototype setter and is
+silently ignored — so storing it would drop the token without a trace.
+Instead the token stays in the description and the parser emits a
+[`reserved-key`](#warnings) warning:
+
+```text
+task __proto__:polluted
+→ data: {}, description: "task __proto__:polluted"
+```
+
+Every occurrence warns, so repeated `__proto__` tokens never produce a
+`duplicate-metadata-key` warning. The key is matched exactly and
+case-sensitively: `__PROTO__:x` and `proto:x` are ordinary metadata. Parsing
+never modifies `Object.prototype`, whatever the input contains.
+
+Because the token stays in the description, formatting is stable: a reparse
+of formatted output keeps it in the description too.
+
+Keys that merely name inherited properties — `constructor`, `prototype`,
+`toString`, and friends — are ordinary metadata. They shadow the inherited
+members on that record's `data` object, so read `data` with `Object.hasOwn`
+rather than `in` or a truthiness check. The library's own `meta`, `hasMeta`,
+and `sortByMeta` lookups use `Object.hasOwn` and cannot be confused by
+inherited keys.
+
 ## Warnings
 
 Warnings are non-fatal: a `TodoRecord` is always returned. Pass `onWarning` in
@@ -268,6 +297,7 @@ the line counts together as data.
 | --- | --- | --- |
 | `duplicate-metadata-key` | The same `key:value` key appears more than once | Last value wins |
 | `invalid-date` | A leading `YYYY-MM-DD` value is not a real calendar date | The value stays in the description; the date field is `null` |
+| `reserved-key` | A `key:value` token uses the reserved key `__proto__` | The token stays in the description; it is not stored in `data` |
 
 `invalid-date` metadata includes the offending value and the field that was
 being parsed:

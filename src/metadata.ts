@@ -6,6 +6,17 @@ import type { ParseWarningHandler } from "./types.ts";
  */
 const EXTENSION_PATTERN = /^([^:\s]+):(\S*)$/;
 
+/**
+ * Keys that are never stored as metadata.
+ *
+ * Assigning `__proto__` on a plain object does not create a property: the
+ * write goes through the prototype setter and is silently ignored for a
+ * string value, which would drop the token without a trace. Reserving the
+ * key keeps the token in the description and keeps the parser away from
+ * prototype machinery entirely.
+ */
+const RESERVED_METADATA_KEYS: ReadonlySet<string> = new Set(["__proto__"]);
+
 /** Metadata collected from a task's text. */
 export interface TodoMetadata {
   projects: string[];
@@ -31,8 +42,8 @@ function tokenize(text: string): string[] {
  * True when a whitespace-delimited token is inline metadata.
  *
  * Inline metadata is a project (`+name`), a context (`@name`), or a
- * `key:value` extension. Bare `+`/`@` tokens and empty keys are not
- * metadata.
+ * `key:value` extension. Bare `+`/`@` tokens, empty keys, and the reserved
+ * `__proto__` key are not metadata.
  */
 export function isMetadataToken(token: string): boolean {
   if (token.startsWith("+") && token.length > 1) {
@@ -43,7 +54,8 @@ export function isMetadataToken(token: string): boolean {
     return true;
   }
 
-  return EXTENSION_PATTERN.test(token);
+  const key = EXTENSION_PATTERN.exec(token)?.[1];
+  return key !== undefined && !RESERVED_METADATA_KEYS.has(key);
 }
 
 /**
@@ -53,7 +65,9 @@ export function isMetadataToken(token: string): boolean {
  * doing both here keeps parsing to a single split per line.
  *
  * When a `key:value` key is repeated, `onWarning` receives a
- * `duplicate-metadata-key` warning and the last value wins.
+ * `duplicate-metadata-key` warning and the last value wins. A token whose key
+ * is reserved (`__proto__`) is not metadata: it stays in the description and
+ * `onWarning` receives a `reserved-key` warning.
  */
 export function parseText(
   text: string,
@@ -79,6 +93,16 @@ export function parseText(
     const key = extension?.[1];
     const value = extension?.[2];
     if (key !== undefined && value !== undefined) {
+      if (RESERVED_METADATA_KEYS.has(key)) {
+        onWarning?.({
+          code: "reserved-key",
+          message: `Reserved metadata key "${key}"; the token stays in the description.`,
+          meta: { key, value },
+        });
+        descriptionTokens.push(token);
+        continue;
+      }
+
       if (Object.hasOwn(data, key)) {
         onWarning?.({
           code: "duplicate-metadata-key",

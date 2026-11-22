@@ -27,6 +27,11 @@ describe("isMetadataToken", () => {
     expect(isMetadataToken("soandso@example.com")).toBe(false);
     expect(isMetadataToken("2+2")).toBe(false);
   });
+
+  test("does not recognize the reserved __proto__ key as metadata", () => {
+    expect(isMetadataToken("__proto__:polluted")).toBe(false);
+    expect(isMetadataToken("__proto__:")).toBe(false);
+  });
 });
 
 describe("parseMetadata", () => {
@@ -73,6 +78,61 @@ describe("parseText warnings", () => {
   });
 });
 
+describe("parseText reserved keys", () => {
+  test("keeps a __proto__ token in the description and warns", () => {
+    const warnings: ParseWarning[] = [];
+    const text = parseText("task __proto__:polluted", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(text.description).toBe("task __proto__:polluted");
+    expect(text.data).toEqual({});
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      code: "reserved-key",
+      message:
+        'Reserved metadata key "__proto__"; the token stays in the description.',
+      meta: { key: "__proto__", value: "polluted" },
+    });
+  });
+
+  test("warns once per __proto__ token, never as a duplicate key", () => {
+    const warnings: ParseWarning[] = [];
+    const text = parseText("a __proto__:x __proto__:y", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(text.description).toBe("a __proto__:x __proto__:y");
+    expect(text.data).toEqual({});
+    expect(warnings).toHaveLength(2);
+    expect(warnings.every((warning) => warning.code === "reserved-key")).toBe(
+      true,
+    );
+  });
+
+  test("keeps an empty-valued __proto__ token", () => {
+    const warnings: ParseWarning[] = [];
+    const text = parseText("task __proto__:", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(text.description).toBe("task __proto__:");
+    expect(text.data).toEqual({});
+    expect(warnings[0]?.meta).toEqual({ key: "__proto__", value: "" });
+  });
+
+  test("treats other spellings of proto as ordinary metadata", () => {
+    const warnings: ParseWarning[] = [];
+    const text = parseText("task __PROTO__:x proto:y", (warning) => {
+      warnings.push(warning);
+    });
+
+    expect(text.description).toBe("task");
+    expect(text.data).toEqual({ __PROTO__: "x", proto: "y" });
+    expect(warnings).toEqual([]);
+  });
+});
+
 describe("stripMetadata", () => {
   test("removes projects, contexts, and extensions", () => {
     expect(
@@ -87,6 +147,12 @@ describe("stripMetadata", () => {
   test("keeps non-metadata tokens", () => {
     expect(stripMetadata("Email soandso@example.com about 2+2")).toBe(
       "Email soandso@example.com about 2+2",
+    );
+  });
+
+  test("keeps reserved-key tokens as description text", () => {
+    expect(stripMetadata("task __proto__:polluted")).toBe(
+      "task __proto__:polluted",
     );
   });
 
