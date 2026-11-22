@@ -625,6 +625,36 @@ directly as the second argument is deprecated but still supported. The full
 rule-by-rule interpretation is documented in
 [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
+### Untrusted input and resource limits
+
+The parser imposes no size limits. It is O(line length) per line and O(file
+size) overall: `parseDocument` materializes the whole document as a line
+array and a records array, and each line is tokenized and rejoined, so peak
+memory reaches several multiples of the input before parsing finishes. There
+is no built-in guard against a pathological line or a huge file.
+
+todo.txt files are personal, trusted input, so this is by design — see
+[Limits and non-goals](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md#limits-and-non-goals).
+If a `read` hook or a string handed to `parseDocument` can come from an
+untrusted source, enforce a size ceiling before handing it over:
+
+```ts
+const MAX_CHARS = 1024 * 1024;
+
+const todos = createTodoTxt({
+  read: async () => {
+    const contents = await fs.readFile("todo.txt", "utf8");
+    if (contents.length > MAX_CHARS) {
+      throw new Error("todo.txt is suspiciously large");
+    }
+    return contents;
+  },
+});
+```
+
+Rejecting from the `read` hook surfaces through the client like any other
+read failure — see [Read errors](#read-errors).
+
 Writing is not implemented yet. The `write` hook is optional for now and will
 become required for the write APIs when they land.
 
