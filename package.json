@@ -17,7 +17,8 @@
     "todotxt",
     "todo",
     "parser",
-    "typescript"
+    "typescript",
+    "bun"
   ],
   "type": "module",
   "sideEffects": false,
@@ -29,6 +30,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.mts",
+      "import": "./dist/node.mjs",
+      "default": "./dist/node.mjs"
     },
     "./package.json": "./package.json"
   },

@@ -5,8 +5,15 @@ import type { TodoRecord } from "./types.ts";
 /** A predicate applied to every record in a query. */
 export type TodoFilter = (todo: TodoRecord) => boolean;
 
-/** Loads and parses every todo.txt record. */
-export type LoadRecords = () => Promise<TodoRecord[]>;
+/**
+ * Loads and parses every todo.txt record.
+ *
+ * `TData` is the consumer's metadata typing for the loaded records; see
+ * {@link TodoRecord}.
+ */
+export type LoadRecords<
+  TData extends Record<string, string> = Record<string, string>,
+> = () => Promise<TodoRecord<TData>[]>;
 
 /** Fields that {@link TodoQuery.sortBy} can order results by. */
 export type TodoSortField =
@@ -111,6 +118,10 @@ export interface TodoQueryState {
 /**
  * A lazy query over parsed todo records.
  *
+ * `TData` types the `data` field of the records this query resolves to; it
+ * defaults to `Record<string, string>` and flows from the client that created
+ * the query. See {@link TodoRecord}.
+ *
  * Filters return a new query and perform no IO. Awaiting a query resolves
  * through the supplied loader; the client caches parsed records, so only the
  * first query reads the file. Filters compose with AND: every predicate added
@@ -122,11 +133,13 @@ export interface TodoQueryState {
  * {@link TodoQuery.countsByContext} are terminal aggregates; and
  * {@link TodoQuery.count} and {@link TodoQuery.first} are terminal shortcuts.
  */
-export interface TodoQuery extends PromiseLike<TodoRecord[]> {
+export interface TodoQuery<
+  TData extends Record<string, string> = Record<string, string>,
+> extends PromiseLike<TodoRecord<TData>[]> {
   /** Only records that are not completed. */
-  pending: () => TodoQuery;
+  pending: () => TodoQuery<TData>;
   /** Only records that are completed. */
-  completed: () => TodoQuery;
+  completed: () => TodoQuery<TData>;
   /**
    * Only records tagged with the project `name`.
    *
@@ -136,25 +149,25 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * per-call override says otherwise; case-insensitive comparison uses
    * `toLowerCase()`, which is not full Unicode case folding.
    */
-  project: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  project: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Only records tagged with the context `name`; see {@link TodoQuery.project}. */
-  context: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  context: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /**
    * Only records not tagged with the project `name`.
    *
    * An array excludes every listed name; an empty array excludes nothing.
    * This is not a replacement for `pending()`/`completed()`.
    */
-  notProject: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  notProject: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Only records not tagged with the context `name`; see {@link TodoQuery.notProject}. */
-  notContext: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  notContext: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /**
    * Only records with priority `letter`.
    *
    * Matching is exact against the uppercase letter the parser stores, so
    * `priority("a")` matches nothing. An array matches any listed letter.
    */
-  priority: (letter: string | string[]) => TodoQuery;
+  priority: (letter: string | string[]) => TodoQuery<TData>;
   /**
    * Only records whose description contains `text` as a substring.
    *
@@ -162,15 +175,15 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * option. Only `description` is searched; projects, contexts, and metadata
    * have their own filters.
    */
-  search: (text: string, options?: TodoMatchOptions) => TodoQuery;
+  search: (text: string, options?: TodoMatchOptions) => TodoQuery<TData>;
   /**
    * Only records with the metadata `key`.
    *
    * With a `value`, the record's value must match it exactly.
    */
-  meta: (key: string, value?: string) => TodoQuery;
+  meta: (key: string, value?: string) => TodoQuery<TData>;
   /** Only records that have the metadata `key`, whatever its value. */
-  hasMeta: (key: string) => TodoQuery;
+  hasMeta: (key: string) => TodoQuery<TData>;
   /**
    * Only records created strictly after `date`.
    *
@@ -178,13 +191,13 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * else throws a `TypeError` when the query is built, before any IO.
    * Records without a creation date never match.
    */
-  createdAfter: (date: string) => TodoQuery;
+  createdAfter: (date: string) => TodoQuery<TData>;
   /** Only records created strictly before `date`; see {@link TodoQuery.createdAfter}. */
-  createdBefore: (date: string) => TodoQuery;
+  createdBefore: (date: string) => TodoQuery<TData>;
   /** Only records completed strictly after `date`; see {@link TodoQuery.createdAfter}. */
-  completedAfter: (date: string) => TodoQuery;
+  completedAfter: (date: string) => TodoQuery<TData>;
   /** Only records completed strictly before `date`; see {@link TodoQuery.createdAfter}. */
-  completedBefore: (date: string) => TodoQuery;
+  completedBefore: (date: string) => TodoQuery<TData>;
   /**
    * Sort the filtered records by `field`; default direction is `"asc"`.
    *
@@ -195,7 +208,7 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * call. Description ordering uses `localeCompare`, so it follows the host
    * locale for equal-ignoring-case ties.
    */
-  sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery;
+  sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery<TData>;
   /**
    * Sort the filtered records by the metadata `key`; default direction is
    * `"asc"`.
@@ -206,7 +219,7 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * last in both directions, and a key no record carries leaves file order
    * intact. The last `sortBy` or `sortByMeta` call wins.
    */
-  sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery;
+  sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery<TData>;
   /** Unique project names in the current result, alphabetically sorted. */
   projects: () => Promise<string[]>;
   /** Unique context names in the current result, alphabetically sorted. */
@@ -242,7 +255,7 @@ export interface TodoQuery extends PromiseLike<TodoRecord[]> {
    * when nothing matches. The record is a copy, so mutating it cannot affect
    * the client's cache.
    */
-  first: () => Promise<TodoRecord | undefined>;
+  first: () => Promise<TodoRecord<TData> | undefined>;
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -391,7 +404,10 @@ function makeComparator(
  *
  * `Array#sort` is stable, so records with equal keys keep file order.
  */
-function applySort(records: TodoRecord[], sort: TodoSortSpec): TodoRecord[] {
+function applySort<TData extends Record<string, string>>(
+  records: TodoRecord<TData>[],
+  sort: TodoSortSpec,
+): TodoRecord<TData>[] {
   return records.sort(makeComparator(sort));
 }
 
@@ -400,11 +416,13 @@ function applySort(records: TodoRecord[], sort: TodoSortSpec): TodoRecord[] {
  *
  * The returned array is safe to sort because it is always a fresh copy when
  * a sort step exists; without one the loader's own array is returned as-is.
+ * Filters operate on the default {@link TodoRecord}; records carrying a
+ * narrower `TData` are assignable to it.
  */
-async function resolveRaw(
-  load: LoadRecords,
+async function resolveRaw<TData extends Record<string, string>>(
+  load: LoadRecords<TData>,
   state: TodoQueryState,
-): Promise<TodoRecord[]> {
+): Promise<TodoRecord<TData>[]> {
   const records = await load();
 
   if (state.sort === undefined) {
@@ -429,10 +447,10 @@ async function resolveRaw(
   return applySort(matches, state.sort);
 }
 
-async function resolveRecords(
-  load: LoadRecords,
+async function resolveRecords<TData extends Record<string, string>>(
+  load: LoadRecords<TData>,
   state: TodoQueryState,
-): Promise<TodoRecord[]> {
+): Promise<TodoRecord<TData>[]> {
   return cloneRecords(await resolveRaw(load, state));
 }
 
@@ -535,10 +553,10 @@ function resolveCountsBy(
   );
 }
 
-async function resolveFirst(
-  load: LoadRecords,
+async function resolveFirst<TData extends Record<string, string>>(
+  load: LoadRecords<TData>,
   state: TodoQueryState,
-): Promise<TodoRecord | undefined> {
+): Promise<TodoRecord<TData> | undefined> {
   const first = (await resolveRaw(load, state))[0];
   return first === undefined ? undefined : cloneRecord(first);
 }
@@ -552,27 +570,32 @@ async function resolveFirst(
  * wins. For example, `pending().completed()` matches nothing, while
  * `project("Work").pending()` matches pending records in `Work`, and
  * `pending().sortBy("priority")` lists them A first.
+ *
+ * `TData` types the `data` field of the records the query resolves to; see
+ * {@link TodoRecord}.
  */
-export function createTodoQuery(
-  load: LoadRecords,
+export function createTodoQuery<
+  TData extends Record<string, string> = Record<string, string>,
+>(
+  load: LoadRecords<TData>,
   state: TodoQueryState = { filters: [], caseSensitive: true },
-): TodoQuery {
+): TodoQuery<TData> {
   const nameOptions = (options?: TodoMatchOptions): boolean =>
     options?.caseSensitive ?? state.caseSensitive;
 
   return {
     pending: () =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [...state.filters, (todo) => !todo.completed],
       }),
     completed: () =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [...state.filters, (todo) => todo.completed],
       }),
     project: (name, options) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -585,7 +608,7 @@ export function createTodoQuery(
         ],
       }),
     context: (name, options) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -598,7 +621,7 @@ export function createTodoQuery(
         ],
       }),
     notProject: (name, options) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -611,7 +634,7 @@ export function createTodoQuery(
         ],
       }),
     notContext: (name, options) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -626,7 +649,7 @@ export function createTodoQuery(
     priority: (letter) => {
       const letters = toArray(letter);
 
-      return createTodoQuery(load, {
+      return createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -638,7 +661,7 @@ export function createTodoQuery(
       const caseSensitive = options?.caseSensitive ?? false;
       const needle = caseSensitive ? text : text.toLowerCase();
 
-      return createTodoQuery(load, {
+      return createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -657,15 +680,18 @@ export function createTodoQuery(
           ? (todo) => Object.hasOwn(todo.data, key)
           : (todo) => todo.data[key] === value;
 
-      return createTodoQuery(load, { ...state, filters: [...state.filters, filter] });
+      return createTodoQuery<TData>(load, {
+        ...state,
+        filters: [...state.filters, filter],
+      });
     },
     hasMeta: (key) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [...state.filters, (todo) => Object.hasOwn(todo.data, key)],
       }),
     createdAfter: (date) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -673,7 +699,7 @@ export function createTodoQuery(
         ],
       }),
     createdBefore: (date) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -681,7 +707,7 @@ export function createTodoQuery(
         ],
       }),
     completedAfter: (date) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -689,7 +715,7 @@ export function createTodoQuery(
         ],
       }),
     completedBefore: (date) =>
-      createTodoQuery(load, {
+      createTodoQuery<TData>(load, {
         ...state,
         filters: [
           ...state.filters,
@@ -697,9 +723,9 @@ export function createTodoQuery(
         ],
       }),
     sortBy: (field, direction = "asc") =>
-      createTodoQuery(load, { ...state, sort: { field, direction } }),
+      createTodoQuery<TData>(load, { ...state, sort: { field, direction } }),
     sortByMeta: (key, direction = "asc") =>
-      createTodoQuery(load, { ...state, sort: { key, direction } }),
+      createTodoQuery<TData>(load, { ...state, sort: { key, direction } }),
     projects: () => pluckNames(load, state, (todo) => todo.projects),
     contexts: () => pluckNames(load, state, (todo) => todo.contexts),
     summary: () => resolveSummary(load, state),

@@ -2,6 +2,11 @@ export { createTodoTxt } from "./src/client.ts";
 export type { TodoTxtClient } from "./src/client.ts";
 export { isValidDate } from "./src/date.ts";
 export { TodoReadError } from "./src/errors.ts";
+export { formatDocument, formatRecord } from "./src/format.ts";
+export type {
+  TodoDocumentFormatOptions,
+  TodoFormatOptions,
+} from "./src/format.ts";
 export { parseDocument, parseDocumentResult, parseLine } from "./src/parse.ts";
 export type {
   TodoCount,

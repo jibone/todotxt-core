@@ -3,6 +3,7 @@ import { TodoReadError } from "./errors.ts";
 import { parseDocumentResult } from "./parse.ts";
 import { createTodoQuery } from "./query.ts";
 import type {
+  LoadRecords,
   TodoMatchOptions,
   TodoNameCount,
   TodoQuery,
@@ -17,10 +18,17 @@ import type {
   TodoRecord,
 } from "./types.ts";
 
-/** The read interface returned by {@link createTodoTxt}. */
-export interface TodoTxtClient {
+/**
+ * The read interface returned by {@link createTodoTxt}.
+ *
+ * `TData` types the `data` field of every record the client resolves to; it
+ * defaults to `Record<string, string>`. See {@link TodoRecord}.
+ */
+export interface TodoTxtClient<
+  TData extends Record<string, string> = Record<string, string>,
+> {
   /** Read fresh todo.txt contents, replace the cache, and return every record. */
-  all: () => Promise<TodoRecord[]>;
+  all: () => Promise<TodoRecord<TData>[]>;
   /**
    * Re-read the file, replace the cache, and return the fresh records.
    *
@@ -30,7 +38,7 @@ export interface TodoTxtClient {
    * may mutate them without affecting the cache. A failed refresh rejects
    * and leaves the previous cache in place.
    */
-  refresh: () => Promise<TodoRecord[]>;
+  refresh: () => Promise<TodoRecord<TData>[]>;
   /**
    * Drop the cached snapshot without reading; the next query re-reads.
    *
@@ -53,48 +61,48 @@ export interface TodoTxtClient {
    */
   warnings: () => ParseWarning[];
   /** Query only records that are not completed, using the cached snapshot. */
-  pending: () => TodoQuery;
+  pending: () => TodoQuery<TData>;
   /** Query only records that are completed, using the cached snapshot. */
-  completed: () => TodoQuery;
+  completed: () => TodoQuery<TData>;
   /**
    * Query records tagged with the project `name`, using the cache.
    *
    * An array matches any listed name; see {@link TodoQuery.project}.
    */
-  project: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  project: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Query records tagged with the context `name`; see {@link TodoQuery.project}. */
-  context: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  context: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Query records not tagged with the project `name`; see {@link TodoQuery.notProject}. */
-  notProject: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  notProject: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Query records not tagged with the context `name`; see {@link TodoQuery.notProject}. */
-  notContext: (name: string | string[], options?: TodoMatchOptions) => TodoQuery;
+  notContext: (name: string | string[], options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Query records with the priority `letter`; see {@link TodoQuery.priority}. */
-  priority: (letter: string | string[]) => TodoQuery;
+  priority: (letter: string | string[]) => TodoQuery<TData>;
   /** Query records whose description contains `text`; see {@link TodoQuery.search}. */
-  search: (text: string, options?: TodoMatchOptions) => TodoQuery;
+  search: (text: string, options?: TodoMatchOptions) => TodoQuery<TData>;
   /** Query records with the metadata `key`; see {@link TodoQuery.meta}. */
-  meta: (key: string, value?: string) => TodoQuery;
+  meta: (key: string, value?: string) => TodoQuery<TData>;
   /** Query records that have the metadata `key`; see {@link TodoQuery.hasMeta}. */
-  hasMeta: (key: string) => TodoQuery;
+  hasMeta: (key: string) => TodoQuery<TData>;
   /** Query records created strictly after `date`; see {@link TodoQuery.createdAfter}. */
-  createdAfter: (date: string) => TodoQuery;
+  createdAfter: (date: string) => TodoQuery<TData>;
   /** Query records created strictly before `date`; see {@link TodoQuery.createdAfter}. */
-  createdBefore: (date: string) => TodoQuery;
+  createdBefore: (date: string) => TodoQuery<TData>;
   /** Query records completed strictly after `date`; see {@link TodoQuery.createdAfter}. */
-  completedAfter: (date: string) => TodoQuery;
+  completedAfter: (date: string) => TodoQuery<TData>;
   /** Query records completed strictly before `date`; see {@link TodoQuery.createdAfter}. */
-  completedBefore: (date: string) => TodoQuery;
+  completedBefore: (date: string) => TodoQuery<TData>;
   /** Sort the whole cached snapshot; see {@link TodoQuery.sortBy}. */
-  sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery;
+  sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery<TData>;
   /**
    * Sort the whole cached snapshot by a metadata value; see
    * {@link TodoQuery.sortByMeta}.
    */
-  sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery;
+  sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery<TData>;
   /** Count records in the cached snapshot; see {@link TodoQuery.count}. */
   count: () => Promise<number>;
   /** First record of the cached snapshot; see {@link TodoQuery.first}. */
-  first: () => Promise<TodoRecord | undefined>;
+  first: () => Promise<TodoRecord<TData> | undefined>;
   /** List unique project names from the cached snapshot, alphabetically sorted. */
   projects: () => Promise<string[]>;
   /** List unique context names from the cached snapshot, alphabetically sorted. */
@@ -123,6 +131,13 @@ export interface TodoTxtClient {
  * `options.caseSensitive: false`, project and context matching compares
  * names through `toLowerCase()`; the default is exact matching.
  *
+ * `TData` optionally types the `data` metadata of every record the client
+ * resolves to, for consumers who know which keys their file uses. It is an
+ * assertion, not a validation: the parser never checks that declared keys
+ * exist, so a missing key reads as `undefined` at runtime. Declare it as a
+ * type with an index signature, such as
+ * `Record<string, string> & { due: string }`; see {@link TodoRecord}.
+ *
  * Parsed records are cached in memory per client. The first query loads and
  * parses the file; later queries reuse that snapshot. {@link TodoTxtClient.all}
  * and {@link TodoTxtClient.refresh} always read fresh contents and replace the
@@ -140,7 +155,9 @@ export interface TodoTxtClient {
  * records per name. Returned records are copies, so callers may mutate them
  * without affecting the cache.
  */
-export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
+export function createTodoTxt<
+  TData extends Record<string, string> = Record<string, string>,
+>(options: TodoClientOptions): TodoTxtClient<TData> {
   let cache: TodoRecord[] | undefined;
   let lastWarnings: ParseWarning[] = [];
   let inFlight: Promise<TodoRecord[]> | undefined;
@@ -237,11 +254,20 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
     return startRead();
   };
 
-  const all = async (): Promise<TodoRecord[]> =>
-    cloneRecords(await startRead());
+  // The parser produces records with `Record<string, string>` metadata.
+  // `TData` is the consumer's assertion about the keys their file carries, so
+  // this cast is the boundary where that assertion is applied; nothing
+  // validates it at runtime.
+  const asTData = (records: TodoRecord[]): TodoRecord<TData>[] =>
+    records as TodoRecord<TData>[];
 
-  const refresh = async (): Promise<TodoRecord[]> =>
-    cloneRecords(await startRead());
+  const load: LoadRecords<TData> = async () => asTData(await loadCached());
+
+  const all = async (): Promise<TodoRecord<TData>[]> =>
+    cloneRecords(asTData(await startRead()));
+
+  const refresh = async (): Promise<TodoRecord<TData>[]> =>
+    cloneRecords(asTData(await startRead()));
 
   const invalidate = (): void => {
     // Bumping the generation orphans any in-flight read: its captured value
@@ -259,7 +285,7 @@ export function createTodoTxt(options: TodoClientOptions): TodoTxtClient {
       meta: { ...warning.meta },
     }));
 
-  const query = createTodoQuery(loadCached, {
+  const query = createTodoQuery<TData>(load, {
     filters: [],
     caseSensitive: options.caseSensitive ?? true,
   });

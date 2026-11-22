@@ -8,6 +8,9 @@ The rules are codified in [`src/todo-txt-rules.test.ts`](../src/todo-txt-rules.t
 Those tests assert complete `TodoRecord` values for canonical examples, so a
 parser refactor that changes the meaning of a rule fails the suite. Runnable
 versions of the examples are in [`examples/rules/`](../examples/rules/).
+The reverse direction — turning records back into text — is documented in
+[Formatting](#formatting-canonical-output) and codified in
+[`src/format.test.ts`](../src/format.test.ts).
 
 ## Summary
 
@@ -304,6 +307,51 @@ creation date.
   rather than starting an empty one.
 - **Completed tasks can have an empty description.** `x ` alone is complete with
   `description: ""`; a date-only line such as `(A) 2011-03-02` is valid too.
+
+## Formatting (canonical output)
+
+`formatRecord` and `formatDocument` turn records back into todo.txt text. The
+output is **canonical, not lossless**: lines are rebuilt from the record
+fields, so whatever the parser normalized is normalized in the output too.
+It is also **stable**: formatting a reparse of formatted output produces the
+same document, `format(parse(format(x))) === format(x)`, even though
+`parse(format(x))` need not equal `x`.
+
+A line is emitted in this order, each part only when the record has it:
+
+```text
+x <completedAt> (<priority>) <createdAt> <description> +projects @contexts key:value
+```
+
+| Property | Behavior |
+| --- | --- |
+| Tag order | Projects, contexts, and metadata keys are alphabetized, so equal records format to equal strings |
+| Tag position | Tags reappear after the description, never at their source positions, because the parser strips them out of `description` |
+| Duplicate keys | Already collapsed to the last value at parse time; one tag per key is emitted |
+| Empty values | A `key:` with an empty value stays empty |
+| Empty records | A record whose fields are all empty formats to `""` |
+
+The parser never keeps a priority on a completed line (see
+[Priority on completed tasks](#priority-on-completed-tasks)), so `x (A)`-shaped
+output can only come from a hand-built or mutated record; formatting emits the
+priority after the completion date rather than dropping it.
+
+Because the parser preserves source order in `projects` and `contexts`, a
+reparse of formatted output may list tags alphabetically instead — that lost
+source order is the defined loss, and the reason no round-trip fidelity is
+claimed. `formatRecord` always formats from the fields, even when `raw` is
+present, so a mutated record never formats to stale text. Use the exact source
+line when you have it:
+
+```ts
+const line = todo.raw ?? formatRecord(todo);
+```
+
+`formatRecord(todo, options?)` can drop tag groups: `includeProjects`,
+`includeContexts`, and `includeMetadata` all default to `true`.
+`formatDocument(records, options?)` formats every record with the same
+options, joins the lines with `eol` (default `"\n"`, also `"\r\n"`), and
+appends one trailing `eol`. An empty record list formats to `""`.
 
 ## Limits and non-goals
 

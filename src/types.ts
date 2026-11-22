@@ -133,8 +133,19 @@ export interface TodoClientOptions extends TodoHooks {
  * {@link TodoRecord.description} into dedicated fields. The original line is
  * not retained unless the caller opts in with `includeSource`, which adds the
  * {@link TodoRecord.line} and {@link TodoRecord.raw} source fields.
+ *
+ * `TData` types the {@link TodoRecord.data} metadata for consumers who know
+ * which keys their file uses. It defaults to `Record<string, string>`, which
+ * matches what the parser produces. Supplying it is an assertion about the
+ * file, not a validation: the library never checks that the declared keys
+ * exist. Declare it as a type with an index signature (for example
+ * `Record<string, string> & { due: string }` or an interface extending
+ * `Record<string, string>`), since plain interfaces do not satisfy the
+ * constraint.
  */
-export interface TodoRecord {
+export interface TodoRecord<
+  TData extends Record<string, string> = Record<string, string>,
+> {
   /** True when the line starts with `x ` (lowercase and followed by a space). */
   completed: boolean;
   /** Uppercase priority letter, e.g. `"A"` for `(A)`, or `null`. */
@@ -164,7 +175,7 @@ export interface TodoRecord {
    *
    * If a key appears more than once, the last value wins.
    */
-  data: Record<string, string>;
+  data: TData;
   /**
    * 1-based physical line number in the source document.
    *
