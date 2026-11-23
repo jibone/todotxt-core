@@ -56,6 +56,31 @@ describe("generic metadata typing", () => {
     expect(record.data.due).toBe("2026-04-15");
   });
 
+  test("write methods type and return TData records", async () => {
+    let contents = "";
+    const todos = createTodoTxt<TaskData>({
+      read: () => contents,
+      write: (next: string) => {
+        contents = next;
+      },
+      today: () => "2026-11-22",
+    });
+
+    const added = await todos.add({
+      description: "Pay taxes",
+      data: { due: "2026-04-15", rec: "1y" },
+    });
+
+    expect(added.data.due).toBe("2026-04-15");
+    expect(added.data.rec).toBe("1y");
+
+    const updated = await todos.update({ ...added, priority: "A" });
+    expect(updated.data.rec).toBe("1y");
+
+    const completed = await todos.complete(updated);
+    expect(completed.data.due).toBe("2026-04-15");
+  });
+
   test("the default typing applies when TData is omitted", async () => {
     const todos = createTodoTxt({ read: () => "Task" });
 

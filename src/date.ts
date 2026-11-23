@@ -31,3 +31,17 @@ export function isValidDate(value: string): boolean {
 
   return day <= maxDay;
 }
+
+/**
+ * Today's date on the system clock, as `YYYY-MM-DD`.
+ *
+ * Reads the local calendar fields rather than `toISOString()`, which would
+ * report the UTC date and drift near midnight, and zero-pads each part.
+ */
+export function localToday(): string {
+  const now = new Date();
+  const year = String(now.getFullYear()).padStart(4, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}

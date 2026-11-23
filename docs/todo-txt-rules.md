@@ -383,6 +383,119 @@ const line = todo.raw ?? formatRecord(todo);
 options, joins the lines with `eol` (default `"\n"`, also `"\r\n"`), and
 appends one trailing `eol`. An empty record list formats to `""`.
 
+## Writing
+
+The client's write APIs — `add`, `update`, `complete`, `uncomplete`, and
+`delete` — turn records back into a todo.txt document through
+`formatRecord` and the consumer's `write` hook. A client created without a
+`write` hook is read-only; its write methods reject with a
+`TodoWriteError`.
+
+### The write model
+
+Every write is a read-modify-write against **current file contents**, never
+the cached snapshot:
+
+1. Re-read through the `read` hook. A failure rejects and nothing is
+   written.
+2. Splice the physical document: replace the target line with its
+   canonical formatting, remove it, or append a new line.
+3. Write the full document through the `write` hook.
+4. On success, replace the cache with a reparse of the written contents, so
+   the next query reflects the change without re-reading. A failed write
+   leaves the cache and `warnings()` untouched; `warnings()` reflects the
+   document as written.
+
+Writes serialize through an internal queue in call order, so concurrent
+mutations apply one after another.
+
+### Identity is the line number
+
+todo.txt defines no IDs, so a line is a todo's only address. Write-enabled
+clients attach `line` to every record they return — even without
+`includeSource`, which still controls `raw` alone — and the write APIs
+locate their target by it. Writes return records carrying current lines,
+so they can be chained without re-querying.
+
+Records held from before an earlier write can go stale, because a `delete`
+moves the following lines up. `complete`, `uncomplete`, and `delete` verify
+that the record still matches the file and reject with a `TodoWriteError`
+(re-query and retry) rather than silently touching the wrong todo.
+`update` cannot tell intended changes from accidental staleness, so it
+trusts the line; re-query first when the file may have moved.
+
+### Surgical splices
+
+Only the touched line is rewritten, canonically. Untouched lines keep
+their exact bytes: blank lines survive, non-canonical tag order survives,
+and a mixed-ending document keeps each line's own terminator, because the
+splice works on physical lines rather than reformatting the file. A
+*touched* first line loses any leading byte-order mark, since it is rebuilt
+from the record fields; an untouched BOM, like every untouched byte, stays.
+`add` appends at the very end of the document, after any trailing blank
+lines, using the file's last seen line ending (`\n` for an empty file); a
+file that ended without a trailing newline gains one before the appended
+line.
+
+### Input validation
+
+Write content must survive the round trip: the canonical line has to
+reparse into exactly the fields that produced it. Invalid content rejects
+with a `TypeError` before any IO happens.
+
+| Field | Rule | Why |
+| --- | --- | --- |
+| `description` | Non-empty and whitespace-normalized: non-empty tokens joined by single spaces | The parser normalizes whitespace, so anything else would not round-trip; and whitespace (including newlines) cannot be part of a physical line |
+| `completedAt`, `createdAt` | `null` or a real `YYYY-MM-DD` calendar date | The record contract guarantees real dates |
+| `completedAt` with `completed: false` | Rejected | The date would lead the formatted line, where it reparses as `createdAt` |
+| `priority` with `completed: true` | Rejected | The parser never keeps a priority on a completed line |
+| `priority` | `null` or one uppercase letter `A`–`Z` | The parser only recognizes uppercase priorities |
+| `projects`/`contexts` names | Non-empty, no whitespace | Tags are whitespace-delimited tokens; a spaced name would split into several |
+| `data` keys | Non-empty, no whitespace, no colon, not `__proto__` | Matches the parser's extension grammar; `__proto__` is reserved |
+| `data` values | No whitespace; empty allowed | `key:` with an empty value round-trips |
+
+Two cross-cutting rules complete the picture:
+
+- **Prefix masquerades are caught, not corrected.** A description whose
+  leading tokens would be misread as the line's prefix — `x Call Mom`,
+  `(A) Call Mom`, `2011-03-02 Call Mom` on a bare pending record — rejects
+  with the divergence spelled out (``the formatted line "x Call Mom"
+  reparses with completed = true instead of false``). The check reparses
+  the formatted line and compares the four prefix fields, so it catches
+  every variant, including a completed record whose description starts
+  with a real date (it would reparse as `createdAt`).
+- **Tag-shaped tokens inside the description are a documented leniency.**
+  The description is emitted verbatim, so `Read http://example.com` stores
+  `http:` as metadata on reparse, exactly as if the line had been written
+  by hand. Rejecting such text would reject ordinary URLs and clock times,
+  so the write APIs leave description *tokens* alone and guard only the
+  *prefix* semantics.
+
+### Completion semantics
+
+`complete()` rewrites the line as `x <date> …`: it sets `completed: true`,
+sets `completedAt` to the explicit date argument or the client's `today`
+hook (the system clock's local `YYYY-MM-DD` by default), and clears
+`priority`, because a completed line never keeps one. Completing an
+already-completed todo rejects with a `TodoWriteError`, as does
+uncompleting a pending one. `uncomplete()` clears `completed` and
+`completedAt`; a priority lost at completion time stays lost. A completed
+line with no description, creation date, or tags — bare `x ` or
+`x 2011-03-03` — rejects rather than becoming a blank line: with the
+marker and date gone there would be no todo left to keep. The `pri:A`
+metadata convention is consumer-managed: the library never writes it.
+
+### Error taxonomy
+
+| Error | Raised for |
+| --- | --- |
+| `TypeError` | Invalid content, before any IO |
+| `TodoWriteError` | No `write` hook; a record without a usable `line`; a line holding no todo; a stale record; the wrong completion state, including `uncomplete()` on a line that would format to nothing; a write-hook rejection that is not an `Error` (wrapped, original on `cause`) |
+
+Write-hook rejections that are already `Error` instances — including
+filesystem errors carrying a `code` — propagate untouched, matching the
+read side.
+
 ## Limits and non-goals
 
 - **Line length is unbounded.** The parser is O(line length) and imposes no

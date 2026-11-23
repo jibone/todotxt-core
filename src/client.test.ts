@@ -17,7 +17,6 @@ describe("createTodoTxt", () => {
         readCalls += 1;
         return "(A) Call Mom @phone\nx 2011-03-03 Done +Chores\n";
       },
-      write: () => {},
     });
 
     const records = await todos.all();
@@ -53,7 +52,6 @@ describe("createTodoTxt", () => {
         await Promise.resolve();
         return "(B) Schedule pickup +GarageSale";
       },
-      write: async () => {},
     });
 
     expect(await todos.all()).toEqual([
@@ -569,6 +567,222 @@ describe("cache lifecycle", () => {
   });
 });
 
+describe("isStale", () => {
+  /** A write-enabled client over a mutable in-memory string. */
+  function createFile(initial: string): {
+    todos: ReturnType<typeof createTodoTxt>;
+    contents: string;
+    readCalls: number;
+  } {
+    let contents = initial;
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return contents;
+      },
+      write: (next: string) => {
+        contents = next;
+      },
+      today: () => "2026-11-22",
+    });
+
+    return {
+      todos,
+      get contents() {
+        return contents;
+      },
+      set contents(value: string) {
+        contents = value;
+      },
+      get readCalls() {
+        return readCalls;
+      },
+    };
+  }
+
+  test("is true before the first read, without reading", async () => {
+    const file = createFile("Task\n");
+
+    expect(await file.todos.isStale()).toBe(true);
+    expect(file.readCalls).toBe(0);
+  });
+
+  test("is false after a read", async () => {
+    const file = createFile("Task\n");
+
+    await file.todos.all();
+
+    expect(await file.todos.isStale()).toBe(false);
+    expect(file.readCalls).toBe(2);
+  });
+
+  test("is true when the file changed externally", async () => {
+    const file = createFile("Task\n");
+
+    await file.todos.all();
+    file.contents = "Changed externally\n";
+
+    expect(await file.todos.isStale()).toBe(true);
+  });
+
+  test("is false after this client's own write", async () => {
+    const file = createFile("Task\n");
+
+    await file.todos.all();
+    await file.todos.add({ description: "Another" });
+
+    expect(await file.todos.isStale()).toBe(false);
+  });
+
+  test("is true after invalidate(), without reading", async () => {
+    const file = createFile("Task\n");
+
+    await file.todos.all();
+    const readsAfterQuery = file.readCalls;
+
+    file.todos.invalidate();
+
+    expect(await file.todos.isStale()).toBe(true);
+    expect(file.readCalls).toBe(readsAfterQuery);
+  });
+
+  test("a stale→refresh cycle settles back to false", async () => {
+    const file = createFile("Task\n");
+
+    await file.todos.all();
+    file.contents = "Changed externally\n";
+
+    expect(await file.todos.isStale()).toBe(true);
+    await file.todos.refresh();
+    expect(await file.todos.isStale()).toBe(false);
+  });
+
+  test("is a pure probe: cache and warnings stay untouched", async () => {
+    const file = createFile("Task k:1 k:2\n");
+
+    await file.todos.all();
+    const readsAfterQuery = file.readCalls;
+
+    expect(await file.todos.isStale()).toBe(false);
+    expect(file.readCalls).toBe(readsAfterQuery + 1);
+
+    // The next query still resolves from the cache, and warnings survive.
+    expect(await file.todos.pending()).toHaveLength(1);
+    expect(file.readCalls).toBe(readsAfterQuery + 1);
+    expect(file.todos.warnings()).toHaveLength(1);
+  });
+
+  test("propagates read failures untouched", async () => {
+    const failure = new Error("read failed");
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        if (readCalls > 1) {
+          throw failure;
+        }
+        return "Task";
+      },
+      write: () => {},
+    });
+
+    await todos.all();
+
+    await expect(todos.isStale()).rejects.toBe(failure);
+  });
+
+  test("waits for queued writes to settle", async () => {
+    const file = createFile("Task\n");
+
+    let releaseWrite: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let writeSettled = false;
+    let contents = "Task\n";
+    const todos = createTodoTxt({
+      read: () => contents,
+      write: async (next: string) => {
+        await gate;
+        contents = next;
+        writeSettled = true;
+      },
+      today: () => "2026-11-22",
+    });
+
+    await todos.all();
+
+    const added = todos.add({ description: "Another" });
+    const stale = todos.isStale();
+
+    expect(writeSettled).toBe(false);
+
+    releaseWrite();
+
+    expect(await stale).toBe(false);
+    expect(writeSettled).toBe(true);
+    expect((await added).description).toBe("Another");
+  });
+
+  test("reports stale when the snapshot is invalidated while queued", async () => {
+    const file = createFile("Task\n");
+
+    await file.todos.all();
+
+    // The probe is queued behind the write queue's tail, so invalidate()
+    // still runs before the probe's task — and the probe must notice the
+    // snapshot it was going to compare against is gone.
+    const probe = file.todos.isStale();
+    file.todos.invalidate();
+
+    expect(await probe).toBe(true);
+  });
+
+  test("works on read-only clients without a write hook", async () => {
+    // Fingerprint tracking belongs to reads, not to the write hook, so a
+    // read-only client can still detect external changes.
+    let contents = "Task\n";
+    const todos = createTodoTxt({
+      read: () => contents,
+    });
+
+    expect(await todos.isStale()).toBe(true);
+
+    await todos.all();
+    expect(await todos.isStale()).toBe(false);
+
+    contents = "Changed externally\n";
+    expect(await todos.isStale()).toBe(true);
+  });
+
+  test("a transforming write hook reports stale until a refresh settles", async () => {
+    // The hook reads a different form than it was given (here it appends a
+    // blank line). The post-write fingerprint trusts the write hook to
+    // have written what it was given, so the next probe sees the
+    // divergence — documented behavior that one refresh settles by
+    // rebuilding the snapshot on the hook's read form.
+    let contents = "Task\n";
+    const todos = createTodoTxt({
+      read: () => `${contents}\n`,
+      write: (next: string) => {
+        contents = next;
+      },
+      today: () => "2026-11-22",
+    });
+
+    await todos.all();
+    expect(await todos.isStale()).toBe(false);
+
+    await todos.add({ description: "Another" });
+
+    expect(await todos.isStale()).toBe(true);
+
+    await todos.refresh();
+    expect(await todos.isStale()).toBe(false);
+  });
+});
+
 describe("includeSource", () => {
   test("adds line and raw to every record", async () => {
     const todos = createTodoTxt({
@@ -607,7 +821,6 @@ describe("includeSource", () => {
   test("records omit source fields by default", async () => {
     const todos = createTodoTxt({
       read: () => "(A) Call Mom",
-      write: () => {},
     });
 
     const records = await todos.all();
