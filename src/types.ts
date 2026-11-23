@@ -91,11 +91,15 @@ export interface ParseResult {
 /**
  * Callbacks supplied by the consumer.
  *
- * The library itself never touches the filesystem. `read` is used by
- * {@link createTodoTxt}. `write` is optional until the write APIs land; when
- * they do, callers that mutate todos will need to provide it. The write hook's
- * return value is ignored, so it may return anything (for example
- * `Bun.write`'s `Promise<number>`).
+ * The library itself never touches the filesystem. `read` produces the file
+ * contents for every read and for the read step of every write (each write is
+ * a read-modify-write against current file contents). `write` receives the
+ * full new document and backs the write APIs — {@link TodoTxtClient.add},
+ * {@link TodoTxtClient.update}, {@link TodoTxtClient.complete},
+ * {@link TodoTxtClient.uncomplete}, and {@link TodoTxtClient.delete}. It is
+ * optional: a client without it stays read-only, and its write methods reject
+ * with a {@link TodoWriteError}. The write hook's return value is ignored, so
+ * it may return anything (for example `Bun.write`'s `Promise<number>`).
  *
  * `logger` is an optional bring-your-own logger. It is silent when omitted.
  */
@@ -126,6 +130,16 @@ export interface TodoClientOptions extends TodoHooks {
    * plucks such as `projects()` always preserve original casing.
    */
   caseSensitive?: boolean;
+  /**
+   * Source of "today" for the default completion date of
+   * {@link TodoTxtClient.complete}. Default: the system clock's local
+   * calendar date, formatted as `YYYY-MM-DD` without timezone conversion.
+   *
+   * Supply it to pin the date for tests or deterministic apps. The hook must
+   * return a real calendar date in `YYYY-MM-DD` form; anything else rejects
+   * `complete()` with a `TypeError`.
+   */
+  today?: () => string;
 }
 
 /**
@@ -181,9 +195,11 @@ export interface TodoRecord<
   /**
    * 1-based physical line number in the source document.
    *
-   * Present only when parsing with `includeSource`. For a whole document it
-   * counts every physical line, including blank ones. For a single line it is
-   * the number supplied via `ParseOptions.line`.
+   * Present when parsing with `includeSource` — for a whole document it
+   * counts every physical line, including blank ones, and for a single line
+   * it is the number supplied via `ParseOptions.line`. It is also present on
+   * every record returned by a write-enabled client (one created with a
+   * `write` hook): the write APIs locate their target by this number.
    */
   line?: number;
   /**
@@ -196,4 +212,36 @@ export interface TodoRecord<
    * {@link TodoRecord.description}.
    */
   raw?: string;
+}
+
+/**
+ * Input for {@link TodoTxtClient.add}: a new todo with only its description
+ * required.
+ *
+ * Every omitted field takes the default documented on
+ * {@link TodoTxtClient.add}. `data` is `Partial<TData>` so declared metadata
+ * keys stay typed; as everywhere, `TData` is an assertion, not a validation.
+ */
+export interface TodoAddInput<
+  TData extends Record<string, string> = Record<string, string>,
+> {
+  /** Task text; must be non-empty and whitespace-normalized. */
+  description: string;
+  /** Default: `false`. */
+  completed?: boolean;
+  /** One uppercase letter `A`–`Z`, or `null`. Default: `null`. */
+  priority?: string | null;
+  /**
+   * Completion date in `YYYY-MM-DD` form, or `null`. Only allowed together
+   * with `completed: true`. Default: `null`.
+   */
+  completedAt?: string | null;
+  /** Creation date in `YYYY-MM-DD` form, or `null`. Default: `null`. */
+  createdAt?: string | null;
+  /** Project names without the `+`. Default: `[]`. */
+  projects?: string[];
+  /** Context names without the `@`. Default: `[]`. */
+  contexts?: string[];
+  /** Metadata entries. Default: `{}`. */
+  data?: Partial<TData>;
 }

@@ -60,9 +60,10 @@ const todos = createTodoTxt({
 In Node you can skip the hook boilerplate entirely with the
 [`node` adapter](#node-adapter).
 
-`write` is optional until the write APIs are implemented, so read-only clients
-can omit it. `logger` is optional too and silent when omitted; see
-[Logging](#logging). `includeSource` is optional as well; see
+`write` is required by the [write APIs](#writing) — a client without it
+stays read-only, and its write methods reject with a `TodoWriteError`.
+`logger` is optional too and silent when omitted; see [Logging](#logging).
+`includeSource` is optional as well; see
 [Source metadata](#source-metadata). The runnable Node version is
 [`examples/node/todo-all.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/node/todo-all.ts).
 
@@ -78,7 +79,7 @@ can omit it. `logger` is optional too and silent when omitted; see
 | `projects`    | Projects without the `+` prefix                                     |
 | `contexts`    | Contexts without the `@` prefix                                     |
 | `data`        | `key:value` metadata (`{ due: "2011-03-05" }`)                      |
-| `line`        | 1-based physical line number, when `includeSource` is on            |
+| `line`        | 1-based physical line number — when `includeSource` is on, and always on write-enabled clients (see [Writing](#writing)) |
 | `raw`         | Exact original line, when `includeSource` is on                     |
 
 If a `key:value` key appears more than once, the last value wins. With a
@@ -108,7 +109,10 @@ for (const todo of await todos.pending()) {
 ```
 
 Source fields survive filters, plucks, and the cache-protecting copies that
-queries return. The same option works for the standalone parser:
+queries return. On a write-enabled client (a `write` hook is supplied),
+`line` is attached even without `includeSource`, because the
+[write APIs](#writing) locate records by it; `raw` still requires
+`includeSource`. The same option works for the standalone parser:
 
 ```ts
 parseDocument(contents, { includeSource: true });
@@ -145,8 +149,8 @@ on `createNodeTodoTxt`.
 
 ## Node adapter
 
-Every Node consumer otherwise writes the same `read` hook boilerplate, so the
-package ships an optional subpath that supplies it:
+Every Node consumer otherwise writes the same `read`/`write` hook
+boilerplate, so the package ships an optional subpath that supplies it:
 
 ```ts
 import { createNodeTodoTxt } from "@jibone/todotxt-core/node";
@@ -154,16 +158,19 @@ import { createNodeTodoTxt } from "@jibone/todotxt-core/node";
 const todos = createNodeTodoTxt("todo.txt");
 ```
 
-The adapter reads through `node:fs/promises`. `path` is a file path or
-`URL`; `encoding` selects the file's character encoding (default `"utf8"`);
-and `includeSource`, `caseSensitive`, and `logger` are the same options
+The adapter reads and writes through `node:fs/promises`, so it supplies both
+hooks: a client created through it is always write-enabled (see
+[Writing](#writing)) and its records always carry `line`. `path` is a file
+path or `URL`, passed straight to `readFile` and `writeFile`; `encoding`
+selects the file's character encoding (default `"utf8"`); and
+`includeSource`, `caseSensitive`, `today`, and `logger` are the same options
 [`createTodoTxt`](#usage) accepts. Every client behavior — caching,
-filtering, warnings — is unchanged. `write` is not exposed until the write
-APIs exist.
+filtering, warnings, [staleness checks](#staleness-checks), serialized
+writes — is unchanged.
 
-Filesystem errors propagate untouched: `readFile` rejects with `Error`
-instances carrying a `code` such as `ENOENT`, which the client passes through
-rather than wrapping in `TodoReadError`:
+Filesystem errors propagate untouched: `readFile` and `writeFile` reject
+with `Error` instances carrying a `code` such as `ENOENT`, which the client
+passes through rather than wrapping in `TodoReadError` or `TodoWriteError`:
 
 ```ts
 try {
@@ -258,9 +265,41 @@ is gone, `invalidate()` also resets `warnings()` to `[]` until the next
 successful read.
 
 There is no TTL, background refresh, or file watching. If the file changes
-outside the client, call `refresh()` from your own watcher or before querying
-again. Returned records are independent copies, so mutating them does not
-affect later queries. See `examples/todo-cache.ts`.
+outside the client, [`isStale()`](#staleness-checks) tells you cheaply, and
+`refresh()` reloads when it does. Returned records are independent copies, so
+mutating them does not affect later queries. See `examples/todo-cache.ts`.
+
+### Staleness checks
+
+`isStale()` answers "has the file changed outside this client?" with one read
+and no reparse:
+
+```ts
+if (await todos.isStale()) {
+  await todos.refresh();
+}
+```
+
+- `false` after a successful read or one of this client's own writes.
+- `true` when no snapshot exists — before the first read and after
+  `invalidate()` — without spending a read, and when a fresh read returns
+  different contents than the snapshot was built from.
+- It waits for this client's queued writes to settle, so your own in-flight
+  writes never look like external changes.
+- It is a pure probe: the cache, `warnings()`, and in-flight reads are
+  untouched.
+- Read failures propagate untouched, like every read.
+- It is a point-in-time check, not a subscription — poll it from your own
+  timer or watcher.
+
+Internally the snapshot keeps a 53-bit content fingerprint (plus the length)
+of the exact contents it was built from — the document the client last wrote,
+for a post-write snapshot — and a probe re-reads and compares. Two different
+files escape detection only by matching on both length and hash, which is
+practically never for todo.txt-scale files. One assumption: a post-write
+snapshot trusts the `write` hook to have written what it was given. A hook
+that transforms contents (`write(x)` then `read()` ≠ `x`) reports `true`
+after writes until one `refresh()` settles it.
 
 ### Projects and contexts
 
@@ -498,6 +537,142 @@ machines and locales but is not full Unicode case folding. `projects()` and
 `contexts()` always preserve original casing. `search` is independent of this
 setting: it is case-insensitive by default whatever the client says.
 
+## Writing
+
+Supply a `write` hook and the same client can change the file:
+
+```ts
+const todos = createTodoTxt({
+  read: () => readFile("todo.txt", "utf8"),
+  write: (contents) => writeFile("todo.txt", contents),
+  today: () => "2026-11-22", // optional; defaults to the local system date
+});
+
+await todos.add({ description: "Call Mom", priority: "A", projects: ["Family"] });
+```
+
+Five methods, all returning the affected record as it now exists in the file:
+
+```ts
+await todos.add({ description: "Pay rent" }); // appended as one line
+await todos.update(updated);                   // replace the todo at updated.line
+await todos.complete(todo);                    // x + completion date (today)
+await todos.complete(todo, "2026-11-20");      // x + an explicit date
+await todos.uncomplete(todo);                  // drop x + the date
+await todos.delete(todo);                      // remove the line
+```
+
+A client without a `write` hook is read-only; its write methods reject with
+a `TodoWriteError`.
+
+### Records locate themselves by line
+
+todo.txt has no IDs: a line is a todo's only address. A write-enabled client
+therefore attaches `line` to every record it returns — even without
+`includeSource`, which still controls `raw` alone — and `update`,
+`complete`, `uncomplete`, and `delete` locate their target by it. The
+record each write returns carries a current `line`, so writes chain without
+re-querying:
+
+```ts
+const added = await todos.add({ description: "Task" });
+await todos.update({ ...added, description: "Renamed" });
+```
+
+Records held from before an earlier write can go stale — a `delete` moves
+the following lines up. `complete`, `uncomplete`, and `delete` notice: they
+verify the record still matches the file and reject with a `TodoWriteError`
+telling you to re-query and retry, rather than silently touching the wrong
+todo. `update` cannot tell your intended changes from accidental staleness,
+so it trusts the line — re-query first if the file may have moved.
+
+### Writes are surgical
+
+Every write is a read-modify-write against current file contents: it
+re-reads the file, splices the document, and writes the full result back.
+Only the touched line changes; untouched lines — including blank lines,
+non-canonical tag order, and per-line line endings — keep their exact
+bytes. The touched line is rewritten canonically by `formatRecord`, and
+`add` appends at the end of the document using the file's last seen line
+ending. Writes serialize through an internal queue in call order, so
+concurrent mutations apply one after another.
+
+On success the cache becomes a reparse of the written contents, so the next
+query sees the change without re-reading, and `isStale()` stays `false` — a
+write refreshes the staleness fingerprint too. A failed write leaves the cache
+and `warnings()` untouched, and `warnings()` reflects the document as
+written.
+
+One byte-level note: a *touched* first line loses any leading byte-order
+mark, since it is rebuilt canonically from the record fields. Untouched
+lines — including an untouched BOM — keep their exact bytes.
+
+### Validation
+
+Write content must survive the round trip: the canonical line has to
+reparse into exactly the fields you supplied. Invalid content rejects with
+a `TypeError` before any IO happens:
+
+- `description` is required and must be whitespace-normalized — non-empty
+  tokens joined by single spaces.
+- Dates must be real calendar dates in `YYYY-MM-DD` form. `completedAt`
+  requires `completed: true`, and a completed record cannot carry a
+  priority: the parser drops both on reparse, so keeping them would lie.
+- `priority` is `null` or one uppercase letter `A`–`Z`.
+- Project, context, and metadata names cannot contain whitespace; metadata
+  keys cannot contain colons and cannot be `__proto__`; metadata values
+  cannot contain whitespace (empty is fine).
+- A description whose leading tokens would be misread as todo.txt prefixes
+  (`x Call Mom`, `(A) Call Mom`, `2011-03-02 Call Mom`) rejects with the
+  divergence spelled out — without the check the line would silently flip
+  `completed`, `priority`, or `createdAt` on reparse.
+
+Tag-shaped tokens *inside* the description are the one deliberate
+leniency: the description is emitted verbatim, so `Read http://example.com`
+stores `http:` as metadata on reparse, exactly as if you had written that
+line by hand. That is inherent to the todo.txt format; keep such text out
+of descriptions if it bothers you. The complete rule-by-rule interpretation
+lives in
+[How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md#writing).
+
+### Completing
+
+`complete()` marks the todo with `x` and a completion date — `today`'s
+value by default, or an explicit `YYYY-MM-DD` argument — and drops the
+priority, because completed lines never keep one. Pin the default for tests
+with the `today` client hook (the default is the system clock's local
+date, formatted without timezone conversion):
+
+```ts
+const todos = createTodoTxt({
+  read: () => readFile("todo.txt", "utf8"),
+  write: (contents) => writeFile("todo.txt", contents),
+  today: () => "2026-11-22",
+});
+```
+
+Completing an already-completed todo rejects, as does uncompleting a
+pending one. `uncomplete()` removes the `x` marker and the completion date;
+a priority lost at completion time stays lost. A completed line with no
+description, creation date, or tags — bare `x ` or `x 2011-03-03` —
+rejects rather than becoming a blank line: with the marker and date gone
+there would be no todo left. Give it a description with `update()` first,
+or `delete()` it. The `pri:A` metadata convention is yours to manage —
+`complete()` never writes it for you.
+
+### Write errors
+
+- `TodoWriteError` — no `write` hook; a record without a usable `line`; a
+  line that holds no todo; a record that no longer matches the file; the
+  wrong completion state; a write-hook rejection that is not an `Error`
+  (wrapped, with the original on `cause`). Write-hook rejections that are
+  `Error` instances — including filesystem errors with a `code` such as
+  `EACCES` — propagate untouched, matching the read side.
+- `TypeError` — invalid content, before any IO.
+
+See `examples/todo-add.ts`, `examples/todo-update.ts`,
+`examples/todo-complete.ts`, and `examples/todo-delete.ts`.
+
 ## Logging
 
 `createTodoTxt` is silent by default. Pass a `logger` to receive diagnostics.
@@ -527,14 +702,15 @@ const todos = createTodoTxt({
 Currently the client emits:
 
 - `debug` when a read starts and when it finishes, with `{ records }`.
+- `debug` when a write starts and when it finishes, with `{ records }`.
 - `warn` for each duplicate `key:value` key; the last value still wins.
 - `warn` for each leading date that is not a real calendar date; the value stays
   in the description.
 
-Cached queries do not log. Read failures stay promise rejections and are not
-logged as `error`; the other levels are reserved for the write APIs. Logging is
-best-effort: a logger that throws or rejects never breaks a read or query. See
-`examples/todo-logger.ts`.
+Cached queries do not log. Read and write failures stay promise rejections
+and are not logged as `error`; that level is reserved. Logging is
+best-effort: a logger that throws or rejects never breaks a read, write, or
+query. See `examples/todo-logger.ts`.
 
 Warnings are also available without a logger, as data; see
 [Warnings and errors as data](#warnings-and-errors-as-data).
@@ -673,9 +849,6 @@ log lines by injecting newlines.
 Consumers rendering records, warnings, or log messages to a terminal,
 HTML, or a log must escape or sanitize them themselves.
 
-Writing is not implemented yet. The `write` hook is optional for now and will
-become required for the write APIs when they land.
-
 ## Formatting
 
 `formatRecord` and `formatDocument` turn records back into todo.txt text for
@@ -732,6 +905,10 @@ bun examples/todo-sort.ts
 bun examples/todo-summary.ts
 bun examples/todo-node-adapter.ts
 bun examples/todo-format.ts
+bun examples/todo-add.ts
+bun examples/todo-update.ts
+bun examples/todo-complete.ts
+bun examples/todo-delete.ts
 ```
 
 Each format rule also has a runnable example:
@@ -750,12 +927,14 @@ Node.js examples show the same API with `node:fs/promises` hooks:
 node examples/node/todo-all.ts
 node examples/node/todo-logger.ts
 node examples/node/todo-node-adapter.ts
+node examples/node/todo-write.ts
 ```
 
 These require Node 22.18+ for native TypeScript type stripping; the library
 itself still runs on Node 20+. `todo-node-adapter.ts` uses the
 [`node` adapter](#node-adapter), and `examples/todo-node-adapter.ts` runs the
-same adapter under Bun.
+same adapter under Bun. `todo-write.ts` tours the
+[write APIs](#writing) against a real temp file.
 
 ## Development
 

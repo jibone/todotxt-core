@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TodoReadError } from "./errors.ts";
+import { TodoWriteError } from "./errors.ts";
 import { createNodeTodoTxt } from "./node.ts";
 
 let tempDir: string;
@@ -34,6 +35,8 @@ describe("createNodeTodoTxt", () => {
       "(A) Call Mom @phone\nx 2011-03-03 Done +Chores\n",
     );
 
+    // The adapter supplies the write hook, so the client is write-enabled
+    // and its records always carry `line`.
     const todos = createNodeTodoTxt(path);
 
     expect(await todos.all()).toEqual([
@@ -46,6 +49,7 @@ describe("createNodeTodoTxt", () => {
         projects: [],
         contexts: ["phone"],
         data: {},
+        line: 1,
       },
       {
         completed: true,
@@ -56,6 +60,7 @@ describe("createNodeTodoTxt", () => {
         projects: ["Chores"],
         contexts: [],
         data: {},
+        line: 2,
       },
     ]);
 
@@ -139,5 +144,41 @@ describe("createNodeTodoTxt", () => {
 
     const chained = await todos.pending().sortBy("priority").first();
     expect(chained?.data.due).toBe("2026-04-15");
+  });
+
+  test("writes through node:fs/promises", async () => {
+    const path = await writeTodoFile("write.txt", "(A) Call Mom\n");
+
+    const todos = createNodeTodoTxt(path);
+    const added = await todos.add({
+      description: "Email Dad",
+      projects: ["Family"],
+    });
+
+    expect(await readFile(path, "utf8")).toBe(
+      "(A) Call Mom\nEmail Dad +Family\n",
+    );
+    expect(added.line).toBe(2);
+  });
+
+  test("forwards the today option", async () => {
+    const path = await writeTodoFile("today.txt", "Call Mom\n");
+
+    const todos = createNodeTodoTxt(path, { today: () => "2011-03-03" });
+
+    const done = await todos.complete((await todos.all())[0]!);
+
+    expect(done.completedAt).toBe("2011-03-03");
+    expect(await readFile(path, "utf8")).toBe("x 2011-03-03 Call Mom\n");
+  });
+
+  test("propagates filesystem write errors untouched", async () => {
+    const todos = createNodeTodoTxt(join(tempDir, "missing-dir", "todo.txt"));
+
+    const failure = await capture(todos.add({ description: "Task" }));
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(TodoWriteError);
+    expect((failure as { code?: string }).code).toBe("ENOENT");
   });
 });

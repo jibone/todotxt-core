@@ -70,4 +70,36 @@ printTitles("read 1", staleRecords);
 printTitles("cache", await editing.pending());
 console.log(`  reads: ${readCount} (the slow read never repopulated the cache)`);
 
-// There is no file watching here: call `refresh()` from your own watcher.
+section("isStale() - has the file changed outside this client?");
+// The hooks below share one mutable string: writing to it directly stands in
+// for todo.txt being edited by another program while the client runs.
+let disk = "(A) Backup the photo album @computer\n";
+let diskReads = 0;
+
+const watching = createTodoTxt({
+  read: () => {
+    diskReads += 1;
+    return disk;
+  },
+  write: (next: string) => {
+    disk = next;
+  },
+  today: () => "2026-11-22",
+});
+
+await watching.all(); // read and cache the snapshot
+console.log(`  after the first read:  ${await watching.isStale()} (reads: ${diskReads})`);
+
+await watching.add({ description: "Buy photo sleeves" }); // one of our own writes
+console.log(`  after our own write:   ${await watching.isStale()} (reads: ${diskReads})`);
+
+disk = "x 2026-11-22 (A) Backup the photo album @computer\nEdited elsewhere\n"; // external edit
+console.log(`  after an external edit: ${await watching.isStale()} (one more read, no reparse)`);
+
+await watching.refresh(); // reload when the probe says the snapshot is obsolete
+console.log(`  after refresh():       ${await watching.isStale()}`);
+
+// There is no TTL, background refresh, or file watching: poll `isStale()`
+// from your own timer and call `refresh()` when it reports `true`. Before
+// the first read and after `invalidate()` it reports `true` without reading
+// at all.
