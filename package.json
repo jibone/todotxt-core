@@ -36,6 +36,11 @@
       "import": "./dist/node.mjs",
       "default": "./dist/node.mjs"
     },
+    "./ext": {
+      "types": "./dist/ext.d.ts",
+      "import": "./dist/ext.js",
+      "default": "./dist/ext.js"
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.js",

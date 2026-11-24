@@ -187,6 +187,10 @@ separate Bun adapter is needed. The runnable versions are
 [`examples/todo-node-adapter.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/todo-node-adapter.ts)
 (Bun).
 
+The package ships one more optional subpath: `@jibone/todotxt-core/ext`
+turns the common `due:` and `pri:` conventions into tested helpers — see
+[Due dates and other extension tags](#due-dates-and-other-extension-tags).
+
 ## Querying
 
 Queries are lazy: chaining filters does no IO. The first query on a client reads
@@ -427,32 +431,66 @@ the creation and completion dates — and both have first-class support: the
 `sortBy("completedAt")` orderings.
 
 Extension values live in `data`, and behavior built on them is yours to
-define. `isValidDate` is exported for that job: it checks `YYYY-MM-DD` values
-arithmetically — no `Date` rollover, no timezone — exactly the check the parser
-applies to the two format dates.
+define. The core stays key-agnostic on purpose — but the common `due:` and
+`pri:` recipes should not be rebuilt by every consumer, so they ship as an
+optional, clearly-opinionated subpath:
 
 ```ts
-import { isValidDate, type TodoRecord } from "@jibone/todotxt-core";
+import {
+  dueDate,
+  effectivePriority,
+  isDueToday,
+  isDueWithin,
+  isOverdue,
+} from "@jibone/todotxt-core/ext";
+
+// Real code passes the current date from its own clock — pinned here only
+// so the example stays deterministic.
+const today = "2024-04-01";
+
+const overdue = (await todos.pending()).filter((todo) =>
+  isOverdue(todo, today),
+);
+const agenda = (await todos.pending()).filter(
+  (todo) => isOverdue(todo, today) || isDueWithin(todo, 7, today),
+);
+```
+
+The helpers are the former README recipes, now tested and versioned:
+
+- `dueDate(todo)` — `data.due` when it is a valid `YYYY-MM-DD` date, else
+  `null`. The read ignores completion: a done task still has a due date.
+- `effectivePriority(todo)` — `todo.priority ?? data.pri ?? null`, the read
+  side of the `pri:A` convention for priorities that `complete()` drops.
+  The value is returned as-is, with no shape check.
+- `isOverdue(todo, today)`, `isDueToday(todo, today)`, and
+  `isDueWithin(todo, days, today)` — pending-only predicates.
+  `isDueWithin` covers the inclusive forward window
+  `[today, today + days]`, so `days: 0` is exactly `isDueToday`; overdue
+  items are excluded on purpose, which is why the agenda above composes the
+  two.
+
+`today` is always an explicit argument — nothing in the subpath reads the
+clock, a locale, or a timezone, so tests stay deterministic. Invalid or
+missing `due:` values are ignored rather than thrown, records are never
+mutated, and `data` reads use `Object.hasOwn`, so inherited keys cannot
+masquerade as metadata. Caller mistakes stay loud: a `today` that is not a
+real date, or a `days` that is not a non-negative integer, throws a
+`TypeError`. The subpath is unreachable from the core entry and adds no
+runtime dependency.
+
+For any other convention, `isValidDate` is exported from the core: it
+checks `YYYY-MM-DD` values arithmetically — no `Date` rollover, no timezone
+— exactly the check the parser applies to the two format dates. The pattern
+is the one above: read `data` with `Object.hasOwn` and compare validated
+dates as plain strings.
+
+```ts
+import { isValidDate } from "@jibone/todotxt-core";
 
 isValidDate("2024-03-10"); // true
 isValidDate("2024-02-30"); // false — shape-valid, but not a real day
 ```
-
-An overdue helper, for instance, is a few lines on the generic APIs:
-
-```ts
-function isOverdue(todo: TodoRecord, today: string): boolean {
-  const due = todo.data["due"];
-  return !todo.completed && due !== undefined && isValidDate(due) && due < today;
-}
-
-const overdue = (await todos.pending()).filter((todo) =>
-  isOverdue(todo, "2024-04-01"),
-);
-```
-
-The same goes for priorities recorded as `pri:A` on completed tasks: read them
-yourself, e.g. `todo.priority ?? todo.data["pri"] ?? null`.
 
 ### count() and first()
 
@@ -658,7 +696,8 @@ description, creation date, or tags — bare `x ` or `x 2011-03-03` —
 rejects rather than becoming a blank line: with the marker and date gone
 there would be no todo left. Give it a description with `update()` first,
 or `delete()` it. The `pri:A` metadata convention is yours to manage —
-`complete()` never writes it for you.
+`complete()` never writes it for you; `effectivePriority` from the
+[`/ext` subpath](#due-dates-and-other-extension-tags) is the read side.
 
 ### Write errors
 
