@@ -112,7 +112,8 @@ Source fields survive filters, plucks, and the cache-protecting copies that
 queries return. On a write-enabled client (a `write` hook is supplied),
 `line` is attached even without `includeSource`, because the
 [write APIs](#writing) locate records by it; `raw` still requires
-`includeSource`. The same option works for the standalone parser:
+`includeSource`. Records that carry `line` can be fetched by it with
+[`byLine`](#line-lookups). The same option works for the standalone parser:
 
 ```ts
 parseDocument(contents, { includeSource: true });
@@ -387,6 +388,27 @@ await todos.completedBefore("2024-01-01");// completedAt strictly earlier
 todos.createdAfter("2024-02-30");
 // TypeError: createdAfter() expected a real calendar date in YYYY-MM-DD form
 ```
+
+### Line lookups
+
+With source metadata on, records carry `line`, and `onLine`/`byLine` look one
+up by it — the `show <line>` shape a CLI needs, without hand-rolling a scan:
+
+```ts
+await todos.byLine(4);  // TodoRecord | undefined — the record at line 4
+await todos.onLine(4);  // TodoQuery — the same record, composable
+
+await todos.pending().byLine(4);      // undefined when line 4 is completed
+await todos.onLine(4).search("Mom");  // AND-composes like every filter
+```
+
+`n` must be a positive integer; anything else throws a `TypeError` when the
+query is built. Line numbers count every physical line, including blank ones,
+and match at most one record. Only records that carry `line` can match, so on
+a read-only client without `includeSource` the lookup resolves empty, exactly
+like an unknown line. Line numbers shift when the file is edited — `delete()`
+moves the records after the removed line up — so treat them as a display
+convenience, not a stable identity.
 
 ### Negation
 

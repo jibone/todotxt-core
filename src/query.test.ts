@@ -911,6 +911,124 @@ describe("date filters", () => {
   });
 });
 
+describe("line filters", () => {
+  test("onLine(n) keeps the record at physical line n", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.onLine(1))).toEqual([
+      "Thank Mom for the meatballs",
+    ]);
+    expect(descriptions(await todos.onLine(4))).toEqual([
+      "Document task format",
+    ]);
+    expect(descriptions(await todos.onLine(19))).toEqual([
+      "Weed the flower bed",
+    ]);
+  });
+
+  test("composes with other filters", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.pending().onLine(4))).toEqual([
+      "Document task format",
+    ]);
+    // Line 5 holds a completed record, so the pending view of it is empty.
+    expect(await todos.pending().onLine(5)).toEqual([]);
+    // A record cannot sit at two lines at once.
+    expect(await todos.onLine(4).onLine(5)).toEqual([]);
+  });
+
+  test("unknown lines resolve empty through the cache loader", async () => {
+    const todos = createClient();
+
+    expect(await todos.onLine(99)).toEqual([]);
+  });
+
+  test("line numbers count blank lines", async () => {
+    const todos = createClient(
+      ["(A) Call Mom", "", "x 2011-03-03 Done", "", "", "(B) Post signs"].join(
+        "\n",
+      ),
+    );
+
+    expect(descriptions(await todos.onLine(1))).toEqual(["Call Mom"]);
+    expect(descriptions(await todos.onLine(3))).toEqual(["Done"]);
+    expect(descriptions(await todos.onLine(6))).toEqual(["Post signs"]);
+    // A blank line holds no record.
+    expect(await todos.onLine(2)).toEqual([]);
+  });
+
+  test("line numbers survive CRLF input", async () => {
+    const todos = createClient("(A) Call Mom\r\n(B) Post signs\r\n");
+
+    expect(descriptions(await todos.onLine(1))).toEqual(["Call Mom"]);
+    expect(descriptions(await todos.onLine(2))).toEqual(["Post signs"]);
+    expect(await todos.onLine(3)).toEqual([]);
+  });
+
+  test("byLine(n) resolves the record or undefined", async () => {
+    const todos = createClient();
+
+    expect(await todos.byLine(4)).toMatchObject({
+      description: "Document task format",
+      line: 4,
+    });
+    expect(await todos.byLine(5)).toMatchObject({
+      description: "Review Tim's pull request",
+    });
+    expect(await todos.byLine(99)).toBeUndefined();
+  });
+
+  test("byLine on a filtered query", async () => {
+    const todos = createClient();
+
+    expect((await todos.pending().byLine(4))?.description).toBe(
+      "Document task format",
+    );
+    expect(await todos.pending().byLine(5)).toBeUndefined();
+  });
+
+  test("returned records are copies, not the cache", async () => {
+    const todos = createClient();
+
+    const record = await todos.byLine(4);
+    record!.description = "tampered";
+
+    expect((await todos.byLine(4))?.description).toBe("Document task format");
+  });
+
+  test("throws TypeError for invalid line numbers without reading", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    expect(() => todos.onLine(0)).toThrow(TypeError);
+    expect(() => todos.onLine(-3)).toThrow(TypeError);
+    expect(() => todos.onLine(1.5)).toThrow(TypeError);
+    expect(() => todos.onLine(Number.NaN)).toThrow(TypeError);
+    // @ts-expect-error -- runtime guard for untyped callers
+    expect(() => todos.onLine("4")).toThrow(TypeError);
+    expect(() => todos.byLine(0)).toThrow(TypeError);
+
+    expect(readCalls).toBe(0);
+
+    expect(await todos.byLine(4)).toBeDefined();
+    expect(readCalls).toBe(1);
+  });
+
+  test("a read-only client without includeSource matches nothing", async () => {
+    const todos = createTodoTxt({ read: () => CONTENTS });
+
+    expect(await todos.onLine(4)).toEqual([]);
+    expect(await todos.byLine(4)).toBeUndefined();
+  });
+});
+
 describe("count and first", () => {
   test("count() matches the length of the same query", async () => {
     const todos = createClient();

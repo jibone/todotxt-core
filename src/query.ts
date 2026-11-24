@@ -131,7 +131,8 @@ export interface TodoQueryState {
  * are terminal plucks that resolve to unique, alphabetically sorted names;
  * {@link TodoQuery.summary}, {@link TodoQuery.countsByProject}, and
  * {@link TodoQuery.countsByContext} are terminal aggregates; and
- * {@link TodoQuery.count} and {@link TodoQuery.first} are terminal shortcuts.
+ * {@link TodoQuery.count}, {@link TodoQuery.first}, and
+ * {@link TodoQuery.byLine} are terminal shortcuts.
  */
 export interface TodoQuery<
   TData extends Record<string, string> = Record<string, string>,
@@ -199,6 +200,19 @@ export interface TodoQuery<
   /** Only records completed strictly before `date`; see {@link TodoQuery.createdAfter}. */
   completedBefore: (date: string) => TodoQuery<TData>;
   /**
+   * Only the record whose source line is `n` (at most one record).
+   *
+   * `n` must be a positive integer; anything else throws a `TypeError`
+   * when the query is built, before any IO. Line numbers are 1-based and
+   * count every physical line, including blank ones. Only records that
+   * carry a source line can match — `includeSource` or a write hook puts
+   * `line` on consumer records — so on a read-only client without
+   * `includeSource` the filter matches nothing. Editing the file shifts
+   * line numbers (`delete()` moves later records up), so this is a lookup
+   * convenience, not a stable identity.
+   */
+  onLine: (n: number) => TodoQuery<TData>;
+  /**
    * Sort the filtered records by `field`; default direction is `"asc"`.
    *
    * The sort is stable: records with equal keys keep file order. Missing
@@ -256,6 +270,12 @@ export interface TodoQuery<
    * the client's cache.
    */
   first: () => Promise<TodoRecord<TData> | undefined>;
+  /**
+   * The record whose source line is `n`, or `undefined` when no visible
+   * record sits there. Exactly `onLine(n).first()`: the record is a copy,
+   * and {@link TodoQuery.onLine}'s line-number rules apply.
+   */
+  byLine: (n: number) => Promise<TodoRecord<TData> | undefined>;
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -305,6 +325,26 @@ function requireValidDate(date: string, method: string): string {
   }
 
   return date;
+}
+
+/**
+ * Validate a line-filter argument at query-build time.
+ *
+ * Like the date filters, invalid arguments throw instead of silently
+ * matching nothing, so a typo in a line number cannot hide behind an
+ * empty result. `typeof` guards untyped callers: a numeric string such
+ * as `"4"` is not a line number.
+ */
+function requireLineNumber(n: number, method: string): number {
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
+    throw new TypeError(
+      `${method}() expected a positive integer line number, got ${
+        typeof n === "number" ? String(n) : JSON.stringify(n)
+      }.`,
+    );
+  }
+
+  return n;
 }
 
 /**
@@ -730,6 +770,16 @@ export function createTodoQuery<
           dateFilter("completedAt", date, "completedBefore", (a, b) => a < b),
         ],
       }),
+    onLine: (n) => {
+      const line = requireLineNumber(n, "onLine");
+
+      return createTodoQuery<TData>(load, {
+        ...state,
+        // Filters run on consumer-exposed records, so records whose `line`
+        // is not carried visibly never match, without any option plumbing.
+        filters: [...state.filters, (todo) => todo.line === line],
+      });
+    },
     sortBy: (field, direction = "asc") =>
       createTodoQuery<TData>(load, { ...state, sort: { field, direction } }),
     sortByMeta: (key, direction = "asc") =>
@@ -741,6 +791,14 @@ export function createTodoQuery<
     countsByContext: () => resolveCountsBy(load, state, (todo) => todo.contexts),
     count: () => resolveCount(load, state),
     first: () => resolveFirst(load, state),
+    byLine: (n) => {
+      const line = requireLineNumber(n, "byLine");
+
+      return resolveFirst(load, {
+        ...state,
+        filters: [...state.filters, (todo) => todo.line === line],
+      });
+    },
     then: (onfulfilled, onrejected) =>
       resolveRecords(load, state).then(onfulfilled, onrejected),
   };

@@ -132,6 +132,8 @@ export interface TodoTxtClient<
   completedAfter: (date: string) => TodoQuery<TData>;
   /** Query records completed strictly before `date`; see {@link TodoQuery.createdAfter}. */
   completedBefore: (date: string) => TodoQuery<TData>;
+  /** Query the record whose source line is `n`; see {@link TodoQuery.onLine}. */
+  onLine: (n: number) => TodoQuery<TData>;
   /** Sort the whole cached snapshot; see {@link TodoQuery.sortBy}. */
   sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery<TData>;
   /**
@@ -143,6 +145,11 @@ export interface TodoTxtClient<
   count: () => Promise<number>;
   /** First record of the cached snapshot; see {@link TodoQuery.first}. */
   first: () => Promise<TodoRecord<TData> | undefined>;
+  /**
+   * The record whose source line is `n`, or `undefined` when no visible
+   * record sits there; see {@link TodoQuery.byLine} for the rules.
+   */
+  byLine: (n: number) => Promise<TodoRecord<TData> | undefined>;
   /** List unique project names from the cached snapshot, alphabetically sorted. */
   projects: () => Promise<string[]>;
   /** List unique context names from the cached snapshot, alphabetically sorted. */
@@ -884,10 +891,12 @@ export function createTodoTxt<
     createdBefore: query.createdBefore,
     completedAfter: query.completedAfter,
     completedBefore: query.completedBefore,
+    onLine: query.onLine,
     sortBy: query.sortBy,
     sortByMeta: query.sortByMeta,
     count: query.count,
     first: query.first,
+    byLine: query.byLine,
     projects: query.projects,
     contexts: query.contexts,
     summary: query.summary,

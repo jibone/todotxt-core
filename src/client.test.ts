@@ -874,6 +874,60 @@ describe("includeSource", () => {
   });
 });
 
+describe("line lookups", () => {
+  test("byLine resolves the record at a physical line", async () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom\n\nx 2011-03-03 Done",
+      includeSource: true,
+    });
+
+    expect(await todos.byLine(1)).toMatchObject({ description: "Call Mom" });
+    expect(await todos.byLine(3)).toMatchObject({
+      description: "Done",
+      completed: true,
+    });
+  });
+
+  test("write-enabled clients carry line without includeSource", async () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom\n(B) Post signs",
+      write: () => {},
+    });
+
+    expect((await todos.byLine(2))?.description).toBe("Post signs");
+    expect((await todos.onLine(1))[0]?.description).toBe("Call Mom");
+  });
+
+  test("read-only clients without includeSource resolve empty", async () => {
+    const todos = createTodoTxt({ read: () => "(A) Call Mom" });
+
+    expect(await todos.onLine(1)).toEqual([]);
+    expect(await todos.byLine(1)).toBeUndefined();
+  });
+
+  test("returned records cannot mutate the cache", async () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom",
+      includeSource: true,
+    });
+
+    const record = await todos.byLine(1);
+    record!.description = "tampered";
+
+    expect((await todos.byLine(1))?.description).toBe("Call Mom");
+  });
+
+  test("invalid line numbers throw before any read", () => {
+    const todos = createTodoTxt({
+      read: () => "(A) Call Mom",
+      includeSource: true,
+    });
+
+    expect(() => todos.byLine(0)).toThrow(TypeError);
+    expect(() => todos.byLine(1.5)).toThrow(TypeError);
+  });
+});
+
 describe("warnings()", () => {
   test("is empty before the first read", () => {
     const todos = createTodoTxt({
