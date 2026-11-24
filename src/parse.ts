@@ -114,7 +114,7 @@ export function parseLine(
   line: string,
   options?: ParseOptions,
 ): TodoRecord;
-/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. */
+/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. This overload will be removed in 1.0.0. */
 export function parseLine(
   line: string,
   onWarning: ParseWarningHandler,
@@ -261,7 +261,7 @@ export function parseDocument(
   contents: string,
   options?: ParseOptions,
 ): TodoRecord[];
-/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. */
+/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. This overload will be removed in 1.0.0. */
 export function parseDocument(
   contents: string,
   onWarning: ParseWarningHandler,

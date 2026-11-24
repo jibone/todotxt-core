@@ -109,7 +109,7 @@ export interface TodoHooks {
   logger?: TodoLogger;
 }
 
-/** @deprecated Use {@link TodoHooks}. */
+/** @deprecated Use {@link TodoHooks}. This alias will be removed in 1.0.0. */
 export type TodoFileHooks = TodoHooks;
 
 /**
