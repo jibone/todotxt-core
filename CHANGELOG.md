@@ -48,6 +48,10 @@ in majors only, and the public surface — the core entry, the `/node` and
   (#46), backing the runtime claims in the README. Bun keeps its coverage
   through the test suite.
 - The README's examples list includes `todo-ext.ts` (#48).
+- This changelog is the release record going forward, versioned with the
+  code: the release script refuses to publish a version that has no
+  `## [<version>]` section (#43). It stays out of the npm tarball — the
+  in-repo record and GitHub are canonical.
 
 ## [0.13.0] - 2026-11-25
 
