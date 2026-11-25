@@ -681,18 +681,44 @@ Only the touched line changes; untouched lines — including blank lines,
 non-canonical tag order, and per-line line endings — keep their exact
 bytes. The touched line is rewritten canonically by `formatRecord`, and
 `add` appends at the end of the document using the file's last seen line
-ending. Writes serialize through an internal queue in call order, so
-concurrent mutations apply one after another.
+ending. Writes serialize through an internal queue in call order — within
+one client — so concurrent mutations apply one after another.
 
 On success the cache becomes a reparse of the written contents, so the next
 query sees the change without re-reading, and `isStale()` stays `false` — a
 write refreshes the staleness fingerprint too. A failed write leaves the cache
 and `warnings()` untouched, and `warnings()` reflects the document as
-written.
+written. A query that started before the write may still resolve with the
+pre-write snapshot for its own callers; the reparse still wins the cache,
+exactly like a read racing `invalidate()`
+([caching and refresh](#caching-and-refresh)).
 
 One byte-level note: a *touched* first line loses any leading byte-order
 mark, since it is rebuilt canonically from the record fields. Untouched
 lines — including an untouched BOM — keep their exact bytes.
+
+### Concurrency
+
+The write queue is per client. It serializes this client's writes in call
+order so they cannot clobber one another; nothing coordinates across
+clients or processes. Two writers on one file — two clients, two
+processes, or a client and an external editor — are last-write-wins: each
+write is an independent read-modify-write, so racing `w1.add(...)` and
+`w2.add(...)` calls both resolve successfully while only the last one
+survives, and the other todo is silently lost. No error surfaces anywhere.
+Use one client per file per process.
+
+Before writing from a client that may be behind the file, check
+[`isStale()`](#staleness-checks) and `refresh()` first. And because
+`update()` trusts the line — it cannot verify staleness — a stale `update`
+silently replaces whatever now sits at that line; re-query first (see
+[Records locate themselves by line](#records-locate-themselves-by-line)).
+
+Hook authors should write atomically: write the new contents to a temporary
+file and rename it over the target, so a crash mid-write cannot truncate the
+todo.txt. See
+[#44](https://github.com/jibone/todotxt-core/issues/44) for the Node
+adapter's own status.
 
 ### Validation
 

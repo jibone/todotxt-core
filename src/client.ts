@@ -463,8 +463,9 @@ export function createTodoTxt<
     }));
 
   // Serialize writes in call order so concurrent read-modify-write cycles
-  // cannot lose one another's changes. The tail promise never rejects, so
-  // one failed write never blocks the queue.
+  // cannot lose one another's changes — within this client; nothing
+  // coordinates across clients, which are last-write-wins. The tail
+  // promise never rejects, so one failed write never blocks the queue.
   const runWrite = <T>(task: () => Promise<T>): Promise<T> => {
     const attempt = writeQueue.then(task);
     writeQueue = attempt.then(

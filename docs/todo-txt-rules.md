@@ -406,8 +406,18 @@ the cached snapshot:
    leaves the cache and `warnings()` untouched; `warnings()` reflects the
    document as written.
 
-Writes serialize through an internal queue in call order, so concurrent
-mutations apply one after another.
+Writes serialize through an internal queue in call order — within one
+client — so concurrent mutations apply one after another. Nothing
+coordinates across clients or processes: two writers on one file (two
+clients, two processes, or a client and an external editor) are
+last-write-wins, and a lost write surfaces no error. Use one client per
+file per process, and give the `write` hook atomic writes — a temporary
+file plus a rename — so a crash mid-write cannot truncate the file (see
+[#44](https://github.com/jibone/todotxt-core/issues/44)).
+
+A query that started before the write may still resolve with the pre-write
+snapshot for its own callers; the reparse still replaces the cache, so the
+stale read never populates it.
 
 ### Identity is the line number
 
