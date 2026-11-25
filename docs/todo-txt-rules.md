@@ -454,6 +454,15 @@ lines, using the file's last seen line ending (`\n` for an empty file); a
 file that ended without a trailing newline gains one before the appended
 line.
 
+The physical-line machinery behind this — the document split/join that
+preserves each line's own terminator — is internal by design. The write APIs
+are the supported way to touch a todo.txt file: byte preservation is the
+library's job, not an exported utility, and the frozen 1.0 core stays as
+small as the format allows. Builders needing an operation the write APIs do
+not model — an editor, a `done.txt` archiver, a sync tool — should not
+re-implement line splitting ad hoc; a post-1.0 opt-in subpath may expose the
+machinery once there is real builder feedback to shape it.
+
 ### Input validation
 
 Write content must survive the round trip: the canonical line has to
