@@ -168,11 +168,14 @@ the same options [`createTodoTxt`](#usage) accepts. Every client behavior —
 caching, filtering, warnings, [staleness checks](#staleness-checks),
 serialized writes — is unchanged.
 
-Writes are atomic by default: the new contents go to a sibling temp file in
+Writes are atomic: the new contents go to a sibling temp file in
 the same directory, which is renamed over the target. POSIX rename is
 atomic, so a crash mid-write swaps the file whole or not at all — a
 `todo.txt` can no longer be truncated by a torn write. An existing
-target's permissions are preserved across writes.
+target's permissions are preserved across writes. One rename trade-off:
+the swap replaces the target path itself, so a symlinked `todo.txt`
+becomes a regular file on its first write and the file it pointed to
+keeps its old contents.
 
 Filesystem errors propagate untouched: the `node:fs/promises` calls reject
 with `Error` instances carrying a `code` such as `ENOENT`, which the client
@@ -729,9 +732,7 @@ silently replaces whatever now sits at that line; re-query first (see
 
 Hook authors should write atomically: write the new contents to a temporary
 file and rename it over the target, so a crash mid-write cannot truncate the
-todo.txt. See
-[#44](https://github.com/jibone/todotxt-core/issues/44) for the Node
-adapter's own status.
+todo.txt. The bundled [Node adapter](#node-adapter) already writes this way.
 
 ### Validation
 
@@ -990,7 +991,7 @@ formatRecord(record);
 
 formatDocument(records);                       // joined with "\n" + trailing "\n"
 formatDocument(records, { eol: "\r\n" });      // CRLF instead
-formatDocument(records, { eol: "\r" });       // classic-Mac CR instead
+formatDocument(records, { eol: "\r" });        // classic-Mac CR instead
 formatRecord(record, { includeMetadata: false }); // drop key:value tags
 ```
 

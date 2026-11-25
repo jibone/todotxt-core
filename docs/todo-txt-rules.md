@@ -413,8 +413,9 @@ clients, two processes, or a client and an external editor) are
 last-write-wins, and a lost write surfaces no error. Use one client per
 file per process, and give a custom `write` hook atomic writes — a
 temporary file plus a rename — so a crash mid-write cannot truncate the
-file. The bundled Node adapter already writes this way; see
-[Node adapter](#node-adapter) in the README.
+file. The bundled
+[Node adapter](https://github.com/jibone/todotxt-core#node-adapter) already
+writes this way.
 
 A query that started before the write may still resolve with the pre-write
 snapshot for its own callers; the reparse still replaces the cache, so the

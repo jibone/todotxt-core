@@ -113,10 +113,12 @@ async function writeFileAtomic(
  * caching, filtering, warnings, logging, writes, `includeSource`,
  * `caseSensitive`, `today` — matches {@link createTodoTxt}.
  *
- * Writes are atomic by default: the new contents go to a sibling temp
+ * Writes are atomic: the new contents go to a sibling temp
  * file in the same directory, which is renamed over the target, so a
  * crash mid-write cannot truncate or half-write the file. An existing
- * target keeps its mode across writes.
+ * target keeps its mode across writes. The rename replaces the target
+ * path itself: a symlinked target becomes a regular file on its first
+ * write, and the file it pointed to keeps its old contents.
  *
  * Filesystem errors propagate untouched: the `node:fs/promises` calls
  * reject with `Error` instances that carry a `code` such as `ENOENT`,
