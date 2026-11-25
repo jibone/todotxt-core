@@ -985,6 +985,7 @@ formatRecord(record);
 
 formatDocument(records);                       // joined with "\n" + trailing "\n"
 formatDocument(records, { eol: "\r\n" });      // CRLF instead
+formatDocument(records, { eol: "\r" });       // classic-Mac CR instead
 formatRecord(record, { includeMetadata: false }); // drop key:value tags
 ```
 

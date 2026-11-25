@@ -127,6 +127,14 @@ describe("formatDocument", () => {
     );
   });
 
+  test("joins records with a lone CR when requested", () => {
+    const records = parseDocument("(A) First +p\nx 2011-03-03 Second");
+
+    expect(formatDocument(records, { eol: "\r" })).toBe(
+      "(A) First +p\rx 2011-03-03 Second\r",
+    );
+  });
+
   test("formats an empty record list as an empty string", () => {
     expect(formatDocument([])).toBe("");
   });

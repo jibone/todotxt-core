@@ -379,8 +379,9 @@ const line = todo.raw ?? formatRecord(todo);
 `formatRecord(todo, options?)` can drop tag groups: `includeProjects`,
 `includeContexts`, and `includeMetadata` all default to `true`.
 `formatDocument(records, options?)` formats every record with the same
-options, joins the lines with `eol` (default `"\n"`, also `"\r\n"`), and
-appends one trailing `eol`. An empty record list formats to `""`.
+options, joins the lines with `eol` (default `"\n"`, also `"\r\n"` and the
+classic-Mac `"\r"`), and appends one trailing `eol`. An empty record list
+formats to `""`.
 
 ## Writing
 
