@@ -30,3 +30,16 @@ printNames(await todos.project("TodoTxt").pending().contexts());
 section("JSON output for the first pending record");
 const [first] = await todos.pending();
 console.log(JSON.stringify(first, null, 2));
+
+section("byLine(2) - the record at a known line");
+const atLine = await todos.byLine(2);
+if (atLine !== undefined) {
+  printRecords([atLine]);
+}
+
+section("onLine(2) - the filter form, composed with search");
+printRecords(await todos.onLine(2).search("pickup"));
+
+section("byLine(999) - an unknown line resolves undefined");
+console.log(`  ${JSON.stringify(await todos.byLine(999))}`);
+

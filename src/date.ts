@@ -6,6 +6,19 @@ function isLeapYear(year: number): boolean {
 }
 
 /**
+ * Days in `month` (1-12) of `year`, with February leap-aware.
+ *
+ * Returns `0` for an out-of-range month, so callers that validate the month
+ * first can branch on the result alone. Exported for `src/ext.ts`'s window
+ * arithmetic; not part of the public core entry.
+ */
+export function daysInMonth(year: number, month: number): number {
+  return month === 2 && isLeapYear(year)
+    ? 29
+    : (DAYS_IN_MONTH[month - 1] ?? 0);
+}
+
+/**
  * True when `value` is a real calendar date in `YYYY-MM-DD` form.
  *
  * The check is purely arithmetic so it does not depend on the host timezone and
@@ -26,10 +39,7 @@ export function isValidDate(value: string): boolean {
     return false;
   }
 
-  const maxDay =
-    month === 2 && isLeapYear(year) ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0);
-
-  return day <= maxDay;
+  return day <= daysInMonth(year, month);
 }
 
 /**

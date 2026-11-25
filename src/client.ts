@@ -132,6 +132,8 @@ export interface TodoTxtClient<
   completedAfter: (date: string) => TodoQuery<TData>;
   /** Query records completed strictly before `date`; see {@link TodoQuery.createdAfter}. */
   completedBefore: (date: string) => TodoQuery<TData>;
+  /** Query the record whose source line is `n`; see {@link TodoQuery.onLine}. */
+  onLine: (n: number) => TodoQuery<TData>;
   /** Sort the whole cached snapshot; see {@link TodoQuery.sortBy}. */
   sortBy: (field: TodoSortField, direction?: TodoSortDirection) => TodoQuery<TData>;
   /**
@@ -139,10 +141,19 @@ export interface TodoTxtClient<
    * {@link TodoQuery.sortByMeta}.
    */
   sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery<TData>;
+  /** Keep the first `n` records of the cached snapshot; see {@link TodoQuery.limit}. */
+  limit: (n: number) => TodoQuery<TData>;
+  /** Skip the first `n` records of the cached snapshot; see {@link TodoQuery.offset}. */
+  offset: (n: number) => TodoQuery<TData>;
   /** Count records in the cached snapshot; see {@link TodoQuery.count}. */
   count: () => Promise<number>;
   /** First record of the cached snapshot; see {@link TodoQuery.first}. */
   first: () => Promise<TodoRecord<TData> | undefined>;
+  /**
+   * The record whose source line is `n`, or `undefined` when no visible
+   * record sits there; see {@link TodoQuery.byLine} for the rules.
+   */
+  byLine: (n: number) => Promise<TodoRecord<TData> | undefined>;
   /** List unique project names from the cached snapshot, alphabetically sorted. */
   projects: () => Promise<string[]>;
   /** List unique context names from the cached snapshot, alphabetically sorted. */
@@ -452,8 +463,9 @@ export function createTodoTxt<
     }));
 
   // Serialize writes in call order so concurrent read-modify-write cycles
-  // cannot lose one another's changes. The tail promise never rejects, so
-  // one failed write never blocks the queue.
+  // cannot lose one another's changes — within this client; nothing
+  // coordinates across clients, which are last-write-wins. The tail
+  // promise never rejects, so one failed write never blocks the queue.
   const runWrite = <T>(task: () => Promise<T>): Promise<T> => {
     const attempt = writeQueue.then(task);
     writeQueue = attempt.then(
@@ -884,10 +896,14 @@ export function createTodoTxt<
     createdBefore: query.createdBefore,
     completedAfter: query.completedAfter,
     completedBefore: query.completedBefore,
+    onLine: query.onLine,
     sortBy: query.sortBy,
     sortByMeta: query.sortByMeta,
+    limit: query.limit,
+    offset: query.offset,
     count: query.count,
     first: query.first,
+    byLine: query.byLine,
     projects: query.projects,
     contexts: query.contexts,
     summary: query.summary,

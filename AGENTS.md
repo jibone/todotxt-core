@@ -1,15 +1,15 @@
 # AGENTS.md
 
 ## Project
-`todotxt-core` is a todo.txt parser library intended for publication as an npm package. Bun + TypeScript, ESM-only, with the core entrypoint at `index.ts` and a Node adapter subpath at `src/node.ts` (`@jibone/todotxt-core/node`).
+`todotxt-core` is a todo.txt parser library intended for publication as an npm package. Bun + TypeScript, ESM-only, with the core entrypoint at `index.ts`, a Node adapter subpath at `src/node.ts` (`@jibone/todotxt-core/node`), and an optional extension-tag helpers subpath at `src/ext.ts` (`@jibone/todotxt-core/ext`: opinionated `due:`/`pri:` policy, never reachable from the core entry).
 
 Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). There is no separate `TodoItem`/raw representation; the optional `line`/`raw` source fields are attached to records only when the caller opts in with `includeSource` (parser `ParseOptions` or client `TodoClientOptions`). `TodoRecord` is generic over its metadata (`TodoRecord<TData>`); supplying `TData` through `createTodoTxt`/`createNodeTodoTxt` types `data` for known keys and is an assertion, not a validation. `createTodoTxt()` returns a lazy, chainable query API over parsed records:
 
 - `all()`, `pending()`, `completed()`, `project(name)`, `context(name)`
 - `notProject(name)`, `notContext(name)`, `priority(letter)`, `search(text)`,
-  `meta(key, value?)`, `hasMeta(key)`, and the `createdAfter`/`createdBefore`/
-  `completedAfter`/`completedBefore` date filters
-- `sortBy(field, direction?)`, `count()`, and `first()`
+  `meta(key, value?)`, `hasMeta(key)`, `onLine(n)`, and the
+  `createdAfter`/`createdBefore`/`completedAfter`/`completedBefore` date filters
+- `sortBy(field, direction?)`, `limit(n)`, `offset(n)`, `count()`, `first()`, and `byLine(n)`
 - `projects()` and `contexts()` pluck unique, alphabetically sorted names
 - `summary()` returns totals plus per-project/context pending/completed
   counts; `countsByProject()` and `countsByContext()` return the per-name
@@ -75,7 +75,7 @@ way, stable through a reparse, and never claiming round-trip fidelity
 - Test: `bun test` (Bun's built-in runner, discovers `*.test.ts` / `*.spec.ts`)
 - Build: `bun run build` (tsdown → `dist/index.js` + `dist/index.d.ts`, and `dist/node.mjs` + `dist/node.d.mts` for the adapter)
 - Validate package: `bunx publint` and `bunx @arethetypeswrong/cli --pack . --profile esm-only`
-- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-warnings.ts`, `bun examples/todo-cache.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`, `bun examples/todo-node-adapter.ts`, `bun examples/todo-format.ts`, `bun examples/todo-add.ts`, `bun examples/todo-update.ts`, `bun examples/todo-complete.ts`, `bun examples/todo-delete.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts`, `node examples/node/todo-logger.ts`, `node examples/node/todo-node-adapter.ts`, and `node examples/node/todo-write.ts` (Node 22.18+ for type stripping).
+- Run examples: `bun examples/todo-all.ts`, `bun examples/todo-project.ts`, `bun examples/todo-context.ts`, `bun examples/todo-cross.ts`, `bun examples/todo-source.ts`, `bun examples/todo-logger.ts`, `bun examples/todo-warnings.ts`, `bun examples/todo-cache.ts`, `bun examples/todo-try.ts`, `bun examples/todo-filters.ts`, `bun examples/todo-sort.ts`, `bun examples/todo-summary.ts`, `bun examples/todo-ext.ts`, `bun examples/todo-node-adapter.ts`, `bun examples/todo-format.ts`, `bun examples/todo-add.ts`, `bun examples/todo-update.ts`, `bun examples/todo-complete.ts`, `bun examples/todo-delete.ts`; rule examples live in `examples/rules/`; Node examples are `node examples/node/todo-all.ts`, `node examples/node/todo-logger.ts`, `node examples/node/todo-node-adapter.ts`, and `node examples/node/todo-write.ts` (Node 22.18+ for type stripping).
 
 ## Gotchas
 - Format interpretation is documented in `docs/todo-txt-rules.md` and codified in `src/todo-txt-rules.test.ts`; canonical output (formatting) is codified in `src/format.test.ts`. Writing behavior (validation matrix, line identity, surgical splices, completion semantics) is documented in the same doc's "Writing" section and codified in `src/write.test.ts`. Update the doc and tests when parser, formatting, or writing behavior changes.

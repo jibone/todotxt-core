@@ -51,3 +51,15 @@ console.log(
 console.log(
   `  first (desc): ${(await todos.sortBy("priority", "desc").first())?.description}`,
 );
+
+section('sortBy("priority").limit(5) - the top five by priority');
+printRecords(await todos.sortBy("priority").limit(5));
+
+section(
+  'sortBy("completedAt", "desc").limit(3) - the newest three completions',
+);
+printRecords(await todos.sortBy("completedAt", "desc").limit(3));
+
+section("pending().offset(10) - everything after the first ten pending");
+printRecords(await todos.pending().offset(10));
+

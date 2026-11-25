@@ -112,7 +112,8 @@ Source fields survive filters, plucks, and the cache-protecting copies that
 queries return. On a write-enabled client (a `write` hook is supplied),
 `line` is attached even without `includeSource`, because the
 [write APIs](#writing) locate records by it; `raw` still requires
-`includeSource`. The same option works for the standalone parser:
+`includeSource`. Records that carry `line` can be fetched by it with
+[`byLine`](#line-lookups). The same option works for the standalone parser:
 
 ```ts
 parseDocument(contents, { includeSource: true });
@@ -186,6 +187,10 @@ separate Bun adapter is needed. The runnable versions are
 (Node) and
 [`examples/todo-node-adapter.ts`](https://github.com/jibone/todotxt-core/blob/master/examples/todo-node-adapter.ts)
 (Bun).
+
+The package ships one more optional subpath: `@jibone/todotxt-core/ext`
+turns the common `due:` and `pri:` conventions into tested helpers — see
+[Due dates and other extension tags](#due-dates-and-other-extension-tags).
 
 ## Querying
 
@@ -384,6 +389,27 @@ todos.createdAfter("2024-02-30");
 // TypeError: createdAfter() expected a real calendar date in YYYY-MM-DD form
 ```
 
+### Line lookups
+
+With source metadata on, records carry `line`, and `onLine`/`byLine` look one
+up by it — the `show <line>` shape a CLI needs, without hand-rolling a scan:
+
+```ts
+await todos.byLine(4);  // TodoRecord | undefined — the record at line 4
+await todos.onLine(4);  // TodoQuery — the same record, composable
+
+await todos.pending().byLine(4);      // undefined when line 4 is completed
+await todos.onLine(4).search("Mom");  // AND-composes like every filter
+```
+
+`n` must be a positive integer; anything else throws a `TypeError` when the
+query is built. Line numbers count every physical line, including blank ones,
+and match at most one record. Only records that carry `line` can match, so on
+a read-only client without `includeSource` the lookup resolves empty, exactly
+like an unknown line. Line numbers shift when the file is edited — `delete()`
+moves the records after the removed line up — so treat them as a display
+convenience, not a stable identity.
+
 ### Negation
 
 `notProject` and `notContext` keep the records without a name. An array
@@ -417,6 +443,31 @@ await todos.pending().sortByMeta("due");     // by data.due; missing last
 await todos.sortByMeta("part", "desc");      // any metadata key, not just due
 ```
 
+### limit and offset
+
+`limit` and `offset` are steps like `sortBy`: the slice runs at resolution,
+after any sort, and the last call of each wins. They cover "the first N of a
+result", which otherwise leaves the query chain:
+
+```ts
+await todos.pending().sortBy("priority").limit(5); // top 5 by priority
+await todos
+  .completed()
+  .sortBy("completedAt", "desc")
+  .limit(3);                                      // newest 3 completions
+await todos.pending().offset(10);                  // everything after the first 10
+await todos.pending().offset(10).limit(5);         // records 11 through 15
+```
+
+`limit(0)` resolves to `[]` and an offset past the end resolves to `[]`. The
+only accepted argument is a non-negative integer — anything else throws a
+`TypeError` when the query is built, before any read. Resolving terminals see
+the sliced set: `count()` equals `(await query).length`, and plucks and
+aggregates such as `projects()` and `summary()` run over the same records
+`await` would return — sorted first, then sliced. A filter step still
+matches the full record set: `limit(2).onLine(4)` finds line 4, exactly as a
+filter added after `sortBy` ignores the ordering.
+
 ### Due dates and other extension tags
 
 `due:`, `rec:`, `pri:` and every other `key:value` tag are tool conventions,
@@ -427,32 +478,66 @@ the creation and completion dates — and both have first-class support: the
 `sortBy("completedAt")` orderings.
 
 Extension values live in `data`, and behavior built on them is yours to
-define. `isValidDate` is exported for that job: it checks `YYYY-MM-DD` values
-arithmetically — no `Date` rollover, no timezone — exactly the check the parser
-applies to the two format dates.
+define. The core stays key-agnostic on purpose — but the common `due:` and
+`pri:` recipes should not be rebuilt by every consumer, so they ship as an
+optional, clearly-opinionated subpath:
 
 ```ts
-import { isValidDate, type TodoRecord } from "@jibone/todotxt-core";
+import {
+  dueDate,
+  effectivePriority,
+  isDueToday,
+  isDueWithin,
+  isOverdue,
+} from "@jibone/todotxt-core/ext";
+
+// Real code passes the current date from its own clock — pinned here only
+// so the example stays deterministic.
+const today = "2024-04-01";
+
+const overdue = (await todos.pending()).filter((todo) =>
+  isOverdue(todo, today),
+);
+const agenda = (await todos.pending()).filter(
+  (todo) => isOverdue(todo, today) || isDueWithin(todo, 7, today),
+);
+```
+
+The helpers are the former README recipes, now tested and versioned:
+
+- `dueDate(todo)` — `data.due` when it is a valid `YYYY-MM-DD` date, else
+  `null`. The read ignores completion: a done task still has a due date.
+- `effectivePriority(todo)` — `todo.priority ?? data.pri ?? null`, the read
+  side of the `pri:A` convention for priorities that `complete()` drops.
+  The value is returned as-is, with no shape check.
+- `isOverdue(todo, today)`, `isDueToday(todo, today)`, and
+  `isDueWithin(todo, days, today)` — pending-only predicates.
+  `isDueWithin` covers the inclusive forward window
+  `[today, today + days]`, so `days: 0` is exactly `isDueToday`; overdue
+  items are excluded on purpose, which is why the agenda above composes the
+  two.
+
+`today` is always an explicit argument — nothing in the subpath reads the
+clock, a locale, or a timezone, so tests stay deterministic. Invalid or
+missing `due:` values are ignored rather than thrown, records are never
+mutated, and `data` reads use `Object.hasOwn`, so inherited keys cannot
+masquerade as metadata. Caller mistakes stay loud: a `today` that is not a
+real date, or a `days` that is not a non-negative integer, throws a
+`TypeError`. The subpath is unreachable from the core entry and adds no
+runtime dependency.
+
+For any other convention, `isValidDate` is exported from the core: it
+checks `YYYY-MM-DD` values arithmetically — no `Date` rollover, no timezone
+— exactly the check the parser applies to the two format dates. The pattern
+is the one above: read `data` with `Object.hasOwn` and compare validated
+dates as plain strings.
+
+```ts
+import { isValidDate } from "@jibone/todotxt-core";
 
 isValidDate("2024-03-10"); // true
 isValidDate("2024-02-30"); // false — shape-valid, but not a real day
 ```
-
-An overdue helper, for instance, is a few lines on the generic APIs:
-
-```ts
-function isOverdue(todo: TodoRecord, today: string): boolean {
-  const due = todo.data["due"];
-  return !todo.completed && due !== undefined && isValidDate(due) && due < today;
-}
-
-const overdue = (await todos.pending()).filter((todo) =>
-  isOverdue(todo, "2024-04-01"),
-);
-```
-
-The same goes for priorities recorded as `pri:A` on completed tasks: read them
-yourself, e.g. `todo.priority ?? todo.data["pri"] ?? null`.
 
 ### count() and first()
 
@@ -514,7 +599,9 @@ The counting rules:
   `contexts()`. Completed-only records still contribute their names; use
   `pending().summary()` (or `pending().countsByProject()`) to count pending
   work only.
-- `sortBy` steps are ignored, like the name plucks.
+- `sortBy` steps are ignored, like the name plucks — unless a
+  `limit`/`offset` slice is present, in which case the slice is positioned
+  by the sort and aggregates cover the sliced records.
 - Aggregates load through the cache like every other query.
 
 ### Case-insensitive matching
@@ -586,6 +673,14 @@ telling you to re-query and retry, rather than silently touching the wrong
 todo. `update` cannot tell your intended changes from accidental staleness,
 so it trusts the line — re-query first if the file may have moved.
 
+The verification is exact, and tag order counts: records carry `projects`
+and `contexts` in source order, so a record whose tags you reordered — a UI
+sorting them for display, say — is stale to the three guarded APIs and
+rejects like any other mismatch. Reorder deliberately through `update()`,
+which never verifies, or re-query first. The payoff for the strictness: any
+change to the line, even an external edit that only shuffles tags, is
+caught.
+
 ### Writes are surgical
 
 Every write is a read-modify-write against current file contents: it
@@ -594,18 +689,44 @@ Only the touched line changes; untouched lines — including blank lines,
 non-canonical tag order, and per-line line endings — keep their exact
 bytes. The touched line is rewritten canonically by `formatRecord`, and
 `add` appends at the end of the document using the file's last seen line
-ending. Writes serialize through an internal queue in call order, so
-concurrent mutations apply one after another.
+ending. Writes serialize through an internal queue in call order — within
+one client — so concurrent mutations apply one after another.
 
 On success the cache becomes a reparse of the written contents, so the next
 query sees the change without re-reading, and `isStale()` stays `false` — a
 write refreshes the staleness fingerprint too. A failed write leaves the cache
 and `warnings()` untouched, and `warnings()` reflects the document as
-written.
+written. A query that started before the write may still resolve with the
+pre-write snapshot for its own callers; the reparse still wins the cache,
+exactly like a read racing `invalidate()`
+([caching and refresh](#caching-and-refresh)).
 
 One byte-level note: a *touched* first line loses any leading byte-order
 mark, since it is rebuilt canonically from the record fields. Untouched
 lines — including an untouched BOM — keep their exact bytes.
+
+### Concurrency
+
+The write queue is per client. It serializes this client's writes in call
+order so they cannot clobber one another; nothing coordinates across
+clients or processes. Two writers on one file — two clients, two
+processes, or a client and an external editor — are last-write-wins: each
+write is an independent read-modify-write, so racing `w1.add(...)` and
+`w2.add(...)` calls both resolve successfully while only the last one
+survives, and the other todo is silently lost. No error surfaces anywhere.
+Use one client per file per process.
+
+Before writing from a client that may be behind the file, check
+[`isStale()`](#staleness-checks) and `refresh()` first. And because
+`update()` trusts the line — it cannot verify staleness — a stale `update`
+silently replaces whatever now sits at that line; re-query first (see
+[Records locate themselves by line](#records-locate-themselves-by-line)).
+
+Hook authors should write atomically: write the new contents to a temporary
+file and rename it over the target, so a crash mid-write cannot truncate the
+todo.txt. See
+[#44](https://github.com/jibone/todotxt-core/issues/44) for the Node
+adapter's own status.
 
 ### Validation
 
@@ -658,7 +779,8 @@ description, creation date, or tags — bare `x ` or `x 2011-03-03` —
 rejects rather than becoming a blank line: with the marker and date gone
 there would be no todo left. Give it a description with `update()` first,
 or `delete()` it. The `pri:A` metadata convention is yours to manage —
-`complete()` never writes it for you.
+`complete()` never writes it for you; `effectivePriority` from the
+[`/ext` subpath](#due-dates-and-other-extension-tags) is the read side.
 
 ### Write errors
 
@@ -797,8 +919,8 @@ such as `2011-99-99` is treated as text and reported as an `invalid-date`
 warning. Collect warnings by passing `onWarning` in a `ParseOptions` object, or
 get them back as data with
 [`parseDocumentResult`](#warnings-and-errors-as-data); passing the handler
-directly as the second argument is deprecated but still supported. The full
-rule-by-rule interpretation is documented in
+directly as the second argument is deprecated but still supported and will be
+removed in 1.0.0. The full rule-by-rule interpretation is documented in
 [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
 ### Untrusted input and resource limits
