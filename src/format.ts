@@ -21,10 +21,11 @@ export interface TodoFormatOptions {
  */
 export interface TodoDocumentFormatOptions extends TodoFormatOptions {
   /**
-   * Line separator, also written once after the last record.
-   * Default: `"\n"`.
+   * Line separator, also written once after the last record. `"\r"` joins
+   * lines with classic-Mac carriage returns, mirroring the line endings the
+   * parser accepts. Default: `"\n"`.
    */
-  eol?: "\n" | "\r\n";
+  eol?: "\n" | "\r" | "\r\n";
 }
 
 interface ResolvedTodoFormatOptions {

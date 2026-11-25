@@ -55,20 +55,6 @@ function warnInvalidDate(
   });
 }
 
-/**
- * Accept either a {@link ParseWarningHandler} (deprecated) or
- * {@link ParseOptions} as the second argument.
- */
-function normalizeParseOptions(
-  onWarningOrOptions?: ParseWarningHandler | ParseOptions,
-): ParseOptions {
-  if (typeof onWarningOrOptions === "function") {
-    return { onWarning: onWarningOrOptions };
-  }
-
-  return onWarningOrOptions ?? {};
-}
-
 /** Remove one trailing `\r`, so `raw` has no carriage return for CRLF input. */
 function stripTrailingCarriageReturn(line: string): string {
   return line.endsWith("\r") ? line.slice(0, -1) : line;
@@ -113,17 +99,8 @@ function stripLeadingBom(line: string): string {
 export function parseLine(
   line: string,
   options?: ParseOptions,
-): TodoRecord;
-/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. This overload will be removed in 1.0.0. */
-export function parseLine(
-  line: string,
-  onWarning: ParseWarningHandler,
-): TodoRecord;
-export function parseLine(
-  line: string,
-  onWarningOrOptions?: ParseWarningHandler | ParseOptions,
 ): TodoRecord {
-  const options = normalizeParseOptions(onWarningOrOptions);
+  const { includeSource, onWarning } = options ?? {};
   let rest = stripLeadingBom(line);
   let completed = false;
   let priority: string | null = null;
@@ -144,11 +121,11 @@ export function parseLine(
         createdAt = createdDate.date;
         rest = createdDate.rest;
       } else if (createdDate.kind === "invalid") {
-        warnInvalidDate(createdDate.value, "createdAt", options.onWarning);
+        warnInvalidDate(createdDate.value, "createdAt", onWarning);
       }
     } else if (completedDate.kind === "invalid") {
       // The same token cannot also be a creation date, so only warn once.
-      warnInvalidDate(completedDate.value, "completedAt", options.onWarning);
+      warnInvalidDate(completedDate.value, "completedAt", onWarning);
     }
   } else {
     const priorityMatch = PRIORITY_PATTERN.exec(rest);
@@ -162,14 +139,14 @@ export function parseLine(
       createdAt = createdDate.date;
       rest = createdDate.rest;
     } else if (createdDate.kind === "invalid") {
-      warnInvalidDate(createdDate.value, "createdAt", options.onWarning);
+      warnInvalidDate(createdDate.value, "createdAt", onWarning);
     }
   }
 
   const text = rest.trim();
   const { description, projects, contexts, data } = parseText(
     text,
-    options.onWarning,
+    onWarning,
   );
 
   const record: TodoRecord = {
@@ -183,8 +160,8 @@ export function parseLine(
     data,
   };
 
-  if (options.includeSource) {
-    if (options.line !== undefined) {
+  if (includeSource) {
+    if (options?.line !== undefined) {
       record.line = options.line;
     }
 
@@ -260,20 +237,8 @@ function parseDocumentCore(
 export function parseDocument(
   contents: string,
   options?: ParseOptions,
-): TodoRecord[];
-/** @deprecated Pass {@link ParseOptions} with `onWarning` instead. This overload will be removed in 1.0.0. */
-export function parseDocument(
-  contents: string,
-  onWarning: ParseWarningHandler,
-): TodoRecord[];
-export function parseDocument(
-  contents: string,
-  onWarningOrOptions?: ParseWarningHandler | ParseOptions,
 ): TodoRecord[] {
-  return parseDocumentCore(
-    contents,
-    normalizeParseOptions(onWarningOrOptions),
-  ).records;
+  return parseDocumentCore(contents, options ?? {}).records;
 }
 
 /**
@@ -294,5 +259,5 @@ export function parseDocumentResult(
   contents: string,
   options?: ParseOptions,
 ): ParseResult {
-  return parseDocumentCore(contents, normalizeParseOptions(options));
+  return parseDocumentCore(contents, options ?? {});
 }

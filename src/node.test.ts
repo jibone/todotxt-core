@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TodoReadError } from "./errors.ts";
@@ -159,6 +167,74 @@ describe("createNodeTodoTxt", () => {
       "(A) Call Mom\nEmail Dad +Family\n",
     );
     expect(added.line).toBe(2);
+  });
+
+  test("writes atomically and leaves no temp files behind", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "todotxt-core-atomic-"));
+    const path = join(dir, "atomic.txt");
+    await writeFile(path, "Call Mom\n");
+
+    try {
+      const todos = createNodeTodoTxt(path);
+      await todos.add({ description: "Email Dad" });
+
+      expect(await readFile(path, "utf8")).toBe("Call Mom\nEmail Dad\n");
+      expect(await readdir(dir)).toEqual(["atomic.txt"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves the target file's mode across writes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "todotxt-core-mode-"));
+    const path = join(dir, "todo.txt");
+    await writeFile(path, "Call Mom\n");
+    // A mode the default umask would not produce, so the assertion can
+    // tell preservation from a freshly created temp file's mode.
+    await chmod(path, 0o604);
+
+    try {
+      const todos = createNodeTodoTxt(path);
+      await todos.complete((await todos.all())[0]!);
+
+      const { mode } = await stat(path);
+      expect(mode & 0o777).toBe(0o604);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("writes through a URL as the path", async () => {
+    const path = await writeTodoFile("url-write.txt", "Call Mom\n");
+
+    const todos = createNodeTodoTxt(new URL(`file://${path}`));
+    await todos.add({ description: "Email Dad" });
+
+    expect(await readFile(path, "utf8")).toBe("Call Mom\nEmail Dad\n");
+  });
+
+  test("a failed write leaves no temp files and propagates the fs error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "todotxt-core-fail-"));
+    const path = join(dir, "todo.txt");
+    await writeFile(path, "Call Mom\n");
+
+    const todos = createNodeTodoTxt(path);
+
+    try {
+      // No write permission in the directory: the read-modify-write's
+      // read still succeeds, but the temp file cannot be created.
+      await chmod(dir, 0o555);
+
+      const failure = await capture(todos.add({ description: "Task" }));
+
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure).not.toBeInstanceOf(TodoWriteError);
+      expect((failure as { code?: string }).code).toBe("EACCES");
+      expect(await readdir(dir)).toEqual(["todo.txt"]);
+    } finally {
+      await chmod(dir, 0o700);
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("forwards the today option", async () => {

@@ -6,9 +6,9 @@ Every non-empty line is parsed directly into a JSON-friendly `TodoRecord`. The
 library performs no IO. You provide callbacks for reading and writing the file,
 so it works with Bun, Node, a database, or anything else.
 
-> [!WARNING]
-> This library is under active development and is not yet recommended for
-> production use. Its API may change without notice.
+> [!NOTE]
+> Stable since 1.0.0 — see [Stability](#stability) for what is frozen and
+> how changes are handled.
 
 ## Install
 
@@ -162,14 +162,22 @@ const todos = createNodeTodoTxt("todo.txt");
 The adapter reads and writes through `node:fs/promises`, so it supplies both
 hooks: a client created through it is always write-enabled (see
 [Writing](#writing)) and its records always carry `line`. `path` is a file
-path or `URL`, passed straight to `readFile` and `writeFile`; `encoding`
-selects the file's character encoding (default `"utf8"`); and
-`includeSource`, `caseSensitive`, `today`, and `logger` are the same options
-[`createTodoTxt`](#usage) accepts. Every client behavior — caching,
-filtering, warnings, [staleness checks](#staleness-checks), serialized
-writes — is unchanged.
+path or `URL`; `encoding` selects the file's character encoding (default
+`"utf8"`); and `includeSource`, `caseSensitive`, `today`, and `logger` are
+the same options [`createTodoTxt`](#usage) accepts. Every client behavior —
+caching, filtering, warnings, [staleness checks](#staleness-checks),
+serialized writes — is unchanged.
 
-Filesystem errors propagate untouched: `readFile` and `writeFile` reject
+Writes are atomic: the new contents go to a sibling temp file in
+the same directory, which is renamed over the target. POSIX rename is
+atomic, so a crash mid-write swaps the file whole or not at all — a
+`todo.txt` can no longer be truncated by a torn write. An existing
+target's permissions are preserved across writes. One rename trade-off:
+the swap replaces the target path itself, so a symlinked `todo.txt`
+becomes a regular file on its first write and the file it pointed to
+keeps its old contents.
+
+Filesystem errors propagate untouched: the `node:fs/promises` calls reject
 with `Error` instances carrying a `code` such as `ENOENT`, which the client
 passes through rather than wrapping in `TodoReadError` or `TodoWriteError`:
 
@@ -539,6 +547,8 @@ isValidDate("2024-03-10"); // true
 isValidDate("2024-02-30"); // false — shape-valid, but not a real day
 ```
 
+See `examples/todo-ext.ts` for the helpers in a runnable example.
+
 ### count() and first()
 
 `count()` and `first()` resolve through the same loader and cache as every
@@ -724,9 +734,7 @@ silently replaces whatever now sits at that line; re-query first (see
 
 Hook authors should write atomically: write the new contents to a temporary
 file and rename it over the target, so a crash mid-write cannot truncate the
-todo.txt. See
-[#44](https://github.com/jibone/todotxt-core/issues/44) for the Node
-adapter's own status.
+todo.txt. The bundled [Node adapter](#node-adapter) already writes this way.
 
 ### Validation
 
@@ -918,9 +926,8 @@ be real calendar dates in `YYYY-MM-DD` form; a shape-valid but nonexistent date
 such as `2011-99-99` is treated as text and reported as an `invalid-date`
 warning. Collect warnings by passing `onWarning` in a `ParseOptions` object, or
 get them back as data with
-[`parseDocumentResult`](#warnings-and-errors-as-data); passing the handler
-directly as the second argument is deprecated but still supported and will be
-removed in 1.0.0. The full rule-by-rule interpretation is documented in
+[`parseDocumentResult`](#warnings-and-errors-as-data). The full rule-by-rule
+interpretation is documented in
 [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
 ### Untrusted input and resource limits
@@ -986,6 +993,7 @@ formatRecord(record);
 
 formatDocument(records);                       // joined with "\n" + trailing "\n"
 formatDocument(records, { eol: "\r\n" });      // CRLF instead
+formatDocument(records, { eol: "\r" });        // classic-Mac CR instead
 formatRecord(record, { includeMetadata: false }); // drop key:value tags
 ```
 
@@ -1025,6 +1033,7 @@ bun examples/todo-source.ts
 bun examples/todo-filters.ts
 bun examples/todo-sort.ts
 bun examples/todo-summary.ts
+bun examples/todo-ext.ts
 bun examples/todo-node-adapter.ts
 bun examples/todo-format.ts
 bun examples/todo-add.ts
@@ -1058,6 +1067,49 @@ itself still runs on Node 20+. `todo-node-adapter.ts` uses the
 same adapter under Bun. `todo-write.ts` tours the
 [write APIs](#writing) against a real temp file.
 
+## Stability
+
+From 1.0.0 the package follows semantic versioning: breaking changes land
+in majors only, minors add capability, and patches fix behavior.
+
+The public surface is:
+
+- the exports of the core entry (`@jibone/todotxt-core`), the
+  [`node`](#node-adapter) and [`ext`](#due-dates-and-other-extension-tags)
+  subpaths
+- the `TodoRecord` shape
+- the error contract: `TodoReadError`, `TodoWriteError`, and `TypeError`
+  for invalid write content
+- the `ParseWarning` codes
+
+Anything not exported — the physical-line splice machinery, the content
+fingerprinting, everything in `src/` without an `index.ts` export — is
+internal and may change in a minor.
+
+Deprecations follow the model already proven once: a surface is marked
+`@deprecated` in a minor with its removal major named, and removed in that
+major only. 0.x deprecated the positional `onWarning` overloads and
+`TodoFileHooks` for 1.0.0, and 1.0.0 removed exactly those — the history is
+in [`CHANGELOG.md`](CHANGELOG.md).
+
+Deliberately not promised, because the format itself does not define them:
+
+- **Extension-tag semantics.** `due:`, `pri:`, and friends are consumer
+  conventions; the core parses every `key:value` into `data` and stops
+  there. The `/ext` helpers are conveniences, not the format.
+- **Round-trip fidelity.** Formatting is canonical and lossy in a
+  documented way — `todo.raw ?? formatRecord(todo)` is the idiom for the
+  exact source line.
+- **Stable IDs.** todo.txt has none: a line number is a position, and
+  writes can move lines.
+- **Comments, sanitization, or size limits.** The parser treats `#` lines
+  as tasks, emits parsed text as-is, and imposes no line limits — see
+  [Limits and non-goals](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md#limits-and-non-goals).
+
+The runtime claims are backed by CI: the test suite runs under Bun, and a
+smoke test exercises the built package under Node and Deno after every
+build.
+
 ## Development
 
 ```sh
@@ -1080,10 +1132,12 @@ Use `bun run release current` only when `package.json` already contains a versio
 that has not been published yet (for example, the very first release).
 
 The release script requires a clean, in-sync `master` plus authenticated `npm`
-and `gh` CLIs. It runs the test, build, and package validation steps, then bumps
-the version, publishes to npm, pushes the release commit and tag, and creates a
-GitHub Release with generated notes. Add `--dry-run` to see the plan without
-changing anything:
+and `gh` CLIs, and a `## [<version>]` section for the new version in
+[`CHANGELOG.md`](CHANGELOG.md) — a version is not releasable without its
+changelog entry. It runs the test, build, and package validation steps, then
+bumps the version, publishes to npm, pushes the release commit and tag, and
+creates a GitHub Release with generated notes. Add `--dry-run` to see the plan
+without changing anything:
 
 ```sh
 bun run release patch --dry-run

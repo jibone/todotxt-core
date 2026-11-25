@@ -288,10 +288,9 @@ inherited keys.
 
 Warnings are non-fatal: a `TodoRecord` is always returned. Pass `onWarning` in
 a `ParseOptions` object to `parseLine` or `parseDocument` to receive them;
-`parseDocument` adds the 1-based physical line number. Passing the handler
-directly as the second argument is deprecated but still supported and will be
-removed in 1.0.0. `parseDocumentResult` returns the records, the warnings in
-document order, and the line counts together as data.
+`parseDocument` adds the 1-based physical line number. `parseDocumentResult`
+returns the records, the warnings in document order, and the line counts
+together as data.
 
 | Code | Meaning | Record effect |
 | --- | --- | --- |
@@ -380,8 +379,9 @@ const line = todo.raw ?? formatRecord(todo);
 `formatRecord(todo, options?)` can drop tag groups: `includeProjects`,
 `includeContexts`, and `includeMetadata` all default to `true`.
 `formatDocument(records, options?)` formats every record with the same
-options, joins the lines with `eol` (default `"\n"`, also `"\r\n"`), and
-appends one trailing `eol`. An empty record list formats to `""`.
+options, joins the lines with `eol` (default `"\n"`, also `"\r\n"` and the
+classic-Mac `"\r"`), and appends one trailing `eol`. An empty record list
+formats to `""`.
 
 ## Writing
 
@@ -411,9 +411,11 @@ client — so concurrent mutations apply one after another. Nothing
 coordinates across clients or processes: two writers on one file (two
 clients, two processes, or a client and an external editor) are
 last-write-wins, and a lost write surfaces no error. Use one client per
-file per process, and give the `write` hook atomic writes — a temporary
-file plus a rename — so a crash mid-write cannot truncate the file (see
-[#44](https://github.com/jibone/todotxt-core/issues/44)).
+file per process, and give a custom `write` hook atomic writes — a
+temporary file plus a rename — so a crash mid-write cannot truncate the
+file. The bundled
+[Node adapter](https://github.com/jibone/todotxt-core#node-adapter) already
+writes this way.
 
 A query that started before the write may still resolve with the pre-write
 snapshot for its own callers; the reparse still replaces the cache, so the
@@ -452,6 +454,15 @@ from the record fields; an untouched BOM, like every untouched byte, stays.
 lines, using the file's last seen line ending (`\n` for an empty file); a
 file that ended without a trailing newline gains one before the appended
 line.
+
+The physical-line machinery behind this — the document split/join that
+preserves each line's own terminator — is internal by design. The write APIs
+are the supported way to touch a todo.txt file: byte preservation is the
+library's job, not an exported utility, and the frozen 1.0 core stays as
+small as the format allows. Builders needing an operation the write APIs do
+not model — an editor, a `done.txt` archiver, a sync tool — should not
+re-implement line splitting ad hoc; a post-1.0 opt-in subpath may expose the
+machinery once there is real builder feedback to shape it.
 
 ### Input validation
 

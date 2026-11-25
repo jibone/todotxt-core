@@ -1,4 +1,14 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  chmod,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createTodoTxt } from "./client.ts";
 import type { TodoTxtClient } from "./client.ts";
 import type {
@@ -36,6 +46,56 @@ export interface NodeTodoTxtOptions {
 }
 
 /**
+ * Write `contents` to `filePath` atomically: a sibling temp file in the
+ * same directory, then a rename over the target.
+ *
+ * The temp file lives next to the target so the rename stays on one
+ * filesystem and cannot fail with `EXDEV`; POSIX rename is atomic, so a
+ * crash mid-write swaps the file whole or not at all. An existing
+ * target's mode is applied to the temp file before the rename, so a
+ * shared todo.txt keeps its permissions across writes; a target that
+ * does not exist yet is simply created.
+ *
+ * On any failure the temp file is removed best-effort and the original
+ * error propagates untouched, keeping the adapter's documented
+ * passthrough contract.
+ */
+async function writeFileAtomic(
+  filePath: string,
+  contents: string,
+  encoding: BufferEncoding,
+): Promise<void> {
+  const tempPath = join(
+    dirname(filePath),
+    `${basename(filePath)}.${randomUUID()}.tmp`,
+  );
+
+  try {
+    await writeFile(tempPath, contents, { encoding });
+
+    let mode: number | undefined;
+    try {
+      mode = (await stat(filePath)).mode & 0o777;
+    } catch (error) {
+      // A new target keeps the temp file's default mode; every other
+      // stat failure is a real error and propagates.
+      if ((error as { code?: string }).code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    if (mode !== undefined) {
+      await chmod(tempPath, mode);
+    }
+
+    await rename(tempPath, filePath);
+  } catch (error) {
+    await unlink(tempPath).catch(() => {});
+    throw error;
+  }
+}
+
+/**
  * Create a todo.txt client that reads and writes the file with
  * `node:fs/promises`.
  *
@@ -48,16 +108,22 @@ export interface NodeTodoTxtOptions {
  * const todos = createNodeTodoTxt("todo.txt");
  * ```
  *
- * `path` is a file path or a `URL`, passed straight to `readFile` and
- * `writeFile`. The `encoding` option selects the file's character encoding
- * (default `"utf8"`). All client behavior — caching, filtering, warnings,
- * logging, writes, `includeSource`, `caseSensitive`, `today` — matches
- * {@link createTodoTxt}.
+ * `path` is a file path or a `URL`. The `encoding` option selects the
+ * file's character encoding (default `"utf8"`). All client behavior —
+ * caching, filtering, warnings, logging, writes, `includeSource`,
+ * `caseSensitive`, `today` — matches {@link createTodoTxt}.
  *
- * Filesystem errors propagate untouched: `readFile` and `writeFile` reject
- * with `Error` instances that carry a `code` such as `ENOENT`, which the
- * client passes through rather than wrapping in a `TodoReadError` or
- * `TodoWriteError`.
+ * Writes are atomic: the new contents go to a sibling temp
+ * file in the same directory, which is renamed over the target, so a
+ * crash mid-write cannot truncate or half-write the file. An existing
+ * target keeps its mode across writes. The rename replaces the target
+ * path itself: a symlinked target becomes a regular file on its first
+ * write, and the file it pointed to keeps its old contents.
+ *
+ * Filesystem errors propagate untouched: the `node:fs/promises` calls
+ * reject with `Error` instances that carry a `code` such as `ENOENT`,
+ * which the client passes through rather than wrapping in a
+ * `TodoReadError` or `TodoWriteError`.
  *
  * The adapter also works under Bun, which implements `node:fs/promises`; a
  * separate Bun subpath is unnecessary.
@@ -79,9 +145,13 @@ export function createNodeTodoTxt<
     logger,
   } = options ?? {};
 
+  // Resolve once, so the read, the temp-file naming, and the rename all
+  // address the identical path — for `string` and `URL` inputs alike.
+  const filePath = typeof path === "string" ? path : fileURLToPath(path);
+
   return createTodoTxt<TData>({
-    read: () => readFile(path, { encoding }),
-    write: (contents) => writeFile(path, contents, { encoding }),
+    read: () => readFile(filePath, { encoding }),
+    write: (contents) => writeFileAtomic(filePath, contents, encoding),
     includeSource,
     caseSensitive,
     today,

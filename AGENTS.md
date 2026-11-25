@@ -91,9 +91,11 @@ way, stable through a reparse, and never claiming round-trip fidelity
 ## Publishing
 - Releases are manual and local. Use `bun run release <current|patch|minor|major>`
   (`--dry-run` supported). The script requires `master`, a clean and in-sync
-  tree, npm auth, and GitHub CLI auth; it runs tests/typecheck/build/package
-  validation, bumps the version, publishes with `npm publish`, pushes the commit
-  and tag, and creates a GitHub Release with generated notes.
+  tree, npm auth, GitHub CLI auth, and a `## [<version>]` section for the new
+  version in `CHANGELOG.md` — it refuses to publish without one. It runs
+  tests/typecheck/build/package validation, bumps the version, publishes with
+  `npm publish`, pushes the commit and tag, and creates a GitHub Release with
+  generated notes. Set the section's date from `unreleased` before running it.
 - Use `current` for the very first release (version already in `package.json`);
   use `patch`/`minor`/`major` afterwards.
 - There is no CI publish workflow. Keep npm 2FA enabled. Manual publishes do not

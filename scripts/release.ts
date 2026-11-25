@@ -139,6 +139,17 @@ function tagExists(tag: string): boolean {
   return succeeds("git", ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]);
 }
 
+function changelogEntryExists(version: string): boolean {
+  try {
+    const contents = readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf8");
+    return contents
+      .split("\n")
+      .some((line) => line.startsWith(`## [${version}]`));
+  } catch {
+    return false;
+  }
+}
+
 async function main(): Promise<void> {
   const pkg = readPackage();
   const targetVersion =
@@ -198,10 +209,17 @@ async function main(): Promise<void> {
     fail(`Git tag ${tag} already exists.`);
   }
 
+  if (!changelogEntryExists(targetVersion)) {
+    fail(
+      `CHANGELOG.md has no \`## [${targetVersion}]\` section. Every release documents its changes; add it before releasing.`,
+    );
+  }
+
   console.log(`\nRelease plan for ${pkg.name}@${targetVersion}`);
   console.log(`  current version: ${pkg.version}`);
   console.log(`  release bump:    ${bump}`);
   console.log(`  branch:          ${branch}`);
+  console.log(`  changelog:       CHANGELOG.md has a [${targetVersion}] section`);
   console.log("\nChecks:");
   console.log("  bun test");
   console.log("  bunx tsc");
