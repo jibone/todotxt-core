@@ -547,6 +547,8 @@ isValidDate("2024-03-10"); // true
 isValidDate("2024-02-30"); // false — shape-valid, but not a real day
 ```
 
+See `examples/todo-ext.ts` for the helpers in a runnable example.
+
 ### count() and first()
 
 `count()` and `first()` resolve through the same loader and cache as every
@@ -1031,6 +1033,7 @@ bun examples/todo-source.ts
 bun examples/todo-filters.ts
 bun examples/todo-sort.ts
 bun examples/todo-summary.ts
+bun examples/todo-ext.ts
 bun examples/todo-node-adapter.ts
 bun examples/todo-format.ts
 bun examples/todo-add.ts
