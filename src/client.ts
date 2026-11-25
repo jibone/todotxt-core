@@ -141,6 +141,10 @@ export interface TodoTxtClient<
    * {@link TodoQuery.sortByMeta}.
    */
   sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery<TData>;
+  /** Keep the first `n` records of the cached snapshot; see {@link TodoQuery.limit}. */
+  limit: (n: number) => TodoQuery<TData>;
+  /** Skip the first `n` records of the cached snapshot; see {@link TodoQuery.offset}. */
+  offset: (n: number) => TodoQuery<TData>;
   /** Count records in the cached snapshot; see {@link TodoQuery.count}. */
   count: () => Promise<number>;
   /** First record of the cached snapshot; see {@link TodoQuery.first}. */
@@ -894,6 +898,8 @@ export function createTodoTxt<
     onLine: query.onLine,
     sortBy: query.sortBy,
     sortByMeta: query.sortByMeta,
+    limit: query.limit,
+    offset: query.offset,
     count: query.count,
     first: query.first,
     byLine: query.byLine,

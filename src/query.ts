@@ -104,10 +104,20 @@ export interface TodoSummary {
   contexts: TodoNameCount[];
 }
 
-/** Internal query state: AND-composed filters plus one optional sort step. */
+/** Internal query state: AND-composed filters, one optional sort, one optional slice. */
 export interface TodoQueryState {
   filters: TodoFilter[];
   sort?: TodoSortSpec;
+  /**
+   * Keep at most this many records after skipping `offset`. Applied at
+   * resolution, after any sort; the last `limit` call wins.
+   */
+  limit?: number;
+  /**
+   * Skip this many records before keeping at most `limit`. Applied at
+   * resolution, after any sort; the last `offset` call wins.
+   */
+  offset?: number;
   /**
    * Client-level default for name matching. Search is unaffected: it stays
    * case-insensitive by default no matter what this says.
@@ -127,7 +137,10 @@ export interface TodoQueryState {
  * first query reads the file. Filters compose with AND: every predicate added
  * to the chain must match. Array arguments are OR within a single call, so
  * `project(["A", "B"])` matches either name while `project("A").project("B")`
- * requires both. {@link TodoQuery.projects} and {@link TodoQuery.contexts}
+ * requires both. {@link TodoQuery.limit} and {@link TodoQuery.offset} are
+ * steps rather than filters: the last call of each wins, and the slice is
+ * applied at resolution, after any sort. {@link TodoQuery.projects} and
+ * {@link TodoQuery.contexts}
  * are terminal plucks that resolve to unique, alphabetically sorted names;
  * {@link TodoQuery.summary}, {@link TodoQuery.countsByProject}, and
  * {@link TodoQuery.countsByContext} are terminal aggregates; and
@@ -234,6 +247,32 @@ export interface TodoQuery<
    * intact. The last `sortBy` or `sortByMeta` call wins.
    */
   sortByMeta: (key: string, direction?: TodoSortDirection) => TodoQuery<TData>;
+  /**
+   * Keep the first `n` records of the filtered (and sorted) result.
+   *
+   * `n` must be a non-negative integer; anything else throws a `TypeError`
+   * when the query is built, before any IO. `limit(0)` resolves to `[]`.
+   * The slice runs at resolution, after any sort, so
+   * `sortBy("priority").limit(5)` is the top five by priority, not the
+   * file-order first five. The last `limit` call wins, and `limit` and
+   * `offset` compose: `offset(10).limit(5)` keeps records 11 through 15.
+   * Resolving terminals see the sliced set: `count()` equals
+   * `(await query).length`, and plucks and aggregates run over the same
+   * records `await` would return. A filter step still matches the full
+   * record set — `limit(2).onLine(4)` finds line 4 — exactly as a filter
+   * added after `sortBy` ignores the ordering.
+   */
+  limit: (n: number) => TodoQuery<TData>;
+  /**
+   * Skip the first `n` records of the filtered (and sorted) result.
+   *
+   * `n` must be a non-negative integer; anything else throws a `TypeError`
+   * when the query is built, before any IO. An offset past the end
+   * resolves to `[]`. Like {@link TodoQuery.limit}, the slice runs at
+   * resolution after any sort, the last `offset` call wins, and resolving
+   * terminals see the sliced set.
+   */
+  offset: (n: number) => TodoQuery<TData>;
   /** Unique project names in the current result, alphabetically sorted. */
   projects: () => Promise<string[]>;
   /** Unique context names in the current result, alphabetically sorted. */
@@ -248,8 +287,10 @@ export interface TodoQuery<
    * multi-tag records or untagged records exist. Names are unique, keep
    * their original casing, and sort alphabetically like
    * {@link TodoQuery.projects}; completed-only records still contribute
-   * their names. A `sortBy` step is ignored, and the summary loads through
-   * the cache like every other query.
+   * their names. A `sortBy` step is ignored — unless a `limit`/`offset`
+   * slice is present, in which case the slice is positioned by the sort
+   * and the summary covers exactly the records `await` would return —
+   * and the summary loads through the cache like every other query.
    */
   summary: () => Promise<TodoSummary>;
   /**
@@ -339,6 +380,26 @@ function requireLineNumber(n: number, method: string): number {
   if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
     throw new TypeError(
       `${method}() expected a positive integer line number, got ${
+        typeof n === "number" ? String(n) : JSON.stringify(n)
+      }.`,
+    );
+  }
+
+  return n;
+}
+
+/**
+ * Validate a `limit`/`offset` argument at query-build time.
+ *
+ * Zero is valid — `limit(0)` is an empty result and `offset(0)` skips
+ * nothing — so only negative and non-integer values throw, keeping the
+ * date- and line-filter policy of failing before any IO. `typeof` guards
+ * untyped callers: a numeric string such as `"3"` is not a count.
+ */
+function requireSliceCount(n: number, method: "limit" | "offset"): number {
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 0) {
+    throw new TypeError(
+      `${method}() expected a non-negative integer, got ${
         typeof n === "number" ? String(n) : JSON.stringify(n)
       }.`,
     );
@@ -471,26 +532,67 @@ async function resolveRaw<TData extends Record<string, string>>(
 ): Promise<TodoRecord<TData>[]> {
   const records = await load();
 
+  let matches: TodoRecord<TData>[];
+
   if (state.sort === undefined) {
     if (state.filters.length === 0) {
-      return records;
+      matches = records;
+    } else {
+      matches = records.filter((record) =>
+        state.filters.every((filter) => filter(record)),
+      );
     }
+  } else {
+    // Never sort the loader's array in place: the client's cache must keep
+    // file order for later queries.
+    const unsorted =
+      state.filters.length === 0
+        ? records.slice()
+        : records.filter((record) =>
+            state.filters.every((filter) => filter(record)),
+          );
 
-    return records.filter((record) =>
-      state.filters.every((filter) => filter(record)),
-    );
+    matches = applySort(unsorted, state.sort);
   }
 
-  // Never sort the loader's array in place: the client's cache must keep
-  // file order for later queries.
-  const matches =
-    state.filters.length === 0
-      ? records.slice()
-      : records.filter((record) =>
-          state.filters.every((filter) => filter(record)),
-        );
+  return applySlice(matches, state);
+}
 
-  return applySort(matches, state.sort);
+/**
+ * Keep the slice a `limit`/`offset` step selected, at the very end of
+ * resolution.
+ *
+ * The slice runs after any sort, so `sortBy("priority").limit(5)` keeps
+ * the top five by priority. `slice` copies, so the loader's array is
+ * never spliced in place; with no steps set, the input is returned as-is.
+ */
+function applySlice<TData extends Record<string, string>>(
+  records: TodoRecord<TData>[],
+  state: TodoQueryState,
+): TodoRecord<TData>[] {
+  if (state.limit === undefined && state.offset === undefined) {
+    return records;
+  }
+
+  const start = state.offset ?? 0;
+  const end = state.limit === undefined ? undefined : start + state.limit;
+  return records.slice(start, end);
+}
+
+/**
+ * The state a count, pluck, or aggregate resolves with.
+ *
+ * These terminals are order-independent, so the sort is dropped — unless a
+ * `limit`/`offset` slice is present: the slice picks records by position,
+ * and position depends on the sort, so the sliced set must match what
+ * `await` would return.
+ */
+function unsortedState(state: TodoQueryState): TodoQueryState {
+  if (state.limit === undefined && state.offset === undefined) {
+    return { ...state, sort: undefined };
+  }
+
+  return state;
 }
 
 async function resolveRecords<TData extends Record<string, string>>(
@@ -505,8 +607,9 @@ function pluckNames(
   state: TodoQueryState,
   pick: (todo: TodoRecord) => string[],
 ): Promise<string[]> {
-  // Sorting never applies to name plucks; they alphabetize themselves.
-  return resolveRaw(load, { ...state, sort: undefined }).then((records) =>
+  // Sorting never applies to name plucks; they alphabetize themselves. A
+  // limit/offset slice is still honored, positioned by the sort.
+  return resolveRaw(load, unsortedState(state)).then((records) =>
     uniqueSorted(records.flatMap(pick)),
   );
 }
@@ -553,7 +656,9 @@ function resolveCount(
   load: LoadRecords,
   state: TodoQueryState,
 ): Promise<number> {
-  return resolveRaw(load, { ...state, sort: undefined }).then(
+  // Sorting never changes a count, but a slice selects by position, so the
+  // count must run over the sorted set when one is present.
+  return resolveRaw(load, unsortedState(state)).then(
     (records) => records.length,
   );
 }
@@ -562,12 +667,13 @@ function resolveCount(
  * Aggregate the current result into a summary.
  *
  * Sorting never applies to aggregates; they count records, not order them.
+ * A limit/offset slice is still honored, positioned by the sort.
  */
 async function resolveSummary(
   load: LoadRecords,
   state: TodoQueryState,
 ): Promise<TodoSummary> {
-  const records = await resolveRaw(load, { ...state, sort: undefined });
+  const records = await resolveRaw(load, unsortedState(state));
   let pending = 0;
   let completed = 0;
 
@@ -594,7 +700,8 @@ function resolveCountsBy(
   pick: (todo: TodoRecord) => string[],
 ): Promise<TodoNameCount[]> {
   // Sorting never applies to aggregates; they count records, not order them.
-  return resolveRaw(load, { ...state, sort: undefined }).then((records) =>
+  // A limit/offset slice is still honored, positioned by the sort.
+  return resolveRaw(load, unsortedState(state)).then((records) =>
     countNames(records, pick),
   );
 }
@@ -784,6 +891,16 @@ export function createTodoQuery<
       createTodoQuery<TData>(load, { ...state, sort: { field, direction } }),
     sortByMeta: (key, direction = "asc") =>
       createTodoQuery<TData>(load, { ...state, sort: { key, direction } }),
+    limit: (n) =>
+      createTodoQuery<TData>(load, {
+        ...state,
+        limit: requireSliceCount(n, "limit"),
+      }),
+    offset: (n) =>
+      createTodoQuery<TData>(load, {
+        ...state,
+        offset: requireSliceCount(n, "offset"),
+      }),
     projects: () => pluckNames(load, state, (todo) => todo.projects),
     contexts: () => pluckNames(load, state, (todo) => todo.contexts),
     summary: () => resolveSummary(load, state),

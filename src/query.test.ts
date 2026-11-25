@@ -1029,6 +1029,173 @@ describe("line filters", () => {
   });
 });
 
+describe("limit and offset", () => {
+  test("limit(n) keeps the first n records in file order", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.pending().limit(3))).toEqual([
+      "Thank Mom for the meatballs",
+      "Schedule Goodwill pickup",
+      "Post signs around the neighborhood",
+    ]);
+  });
+
+  test("offset(n) skips the first n records", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.pending().offset(9))).toEqual([
+      "Review PR",
+      "Plant tomatoes",
+      "Weed the flower bed",
+    ]);
+    expect(descriptions(await todos.pending().offset(10))).toEqual([
+      "Plant tomatoes",
+      "Weed the flower bed",
+    ]);
+  });
+
+  test("limit and offset compose in either chain order", async () => {
+    const todos = createClient();
+
+    const expected = ["Schedule Goodwill pickup", "Post signs around the neighborhood"];
+
+    expect(descriptions(await todos.pending().limit(2).offset(1))).toEqual(
+      expected,
+    );
+    expect(descriptions(await todos.pending().offset(1).limit(2))).toEqual(
+      expected,
+    );
+  });
+
+  test("limit(0) resolves empty and an oversized limit keeps everything", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().limit(0)).toEqual([]);
+    expect(await todos.pending().limit(99)).toHaveLength(12);
+  });
+
+  test("an offset past the end resolves empty", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().offset(12)).toEqual([]);
+    expect(await todos.pending().offset(99)).toEqual([]);
+    expect(await todos.pending().offset(11)).toHaveLength(1);
+  });
+
+  test("the last limit and offset calls win without resetting each other", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().limit(5).limit(2)).toHaveLength(2);
+    expect(descriptions(await todos.pending().offset(3).offset(1))).toEqual(
+      descriptions(await todos.pending().offset(1)),
+    );
+    // limit(5) survives the offset call: records 10 through 12 of 12 pending.
+    expect(await todos.pending().limit(5).offset(9)).toHaveLength(3);
+  });
+
+  test("count() counts the sliced result", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().limit(4).count()).toBe(4);
+    expect(await todos.pending().limit(0).count()).toBe(0);
+    expect(await todos.offset(15).count()).toBe(4);
+  });
+
+  test("first() respects the slice", async () => {
+    const todos = createClient();
+
+    expect(await todos.pending().limit(0).first()).toBeUndefined();
+    expect((await todos.pending().offset(1).first())?.description).toBe(
+      "Schedule Goodwill pickup",
+    );
+  });
+
+  test("plucks and aggregates see the sliced set", async () => {
+    const todos = createClient();
+
+    // Line 2 is the only record in the 1..2 window; it carries +GarageSale.
+    expect(await todos.offset(1).limit(1).projects()).toEqual(["GarageSale"]);
+    expect(await todos.limit(1).summary()).toMatchObject({
+      total: 1,
+      pending: 1,
+      completed: 0,
+    });
+    expect(await todos.offset(4).limit(1).summary()).toMatchObject({
+      total: 1,
+      pending: 0,
+      completed: 1,
+    });
+    expect(await todos.offset(1).limit(1).countsByProject()).toEqual([
+      {
+        name: "GarageSale",
+        counts: { pending: 1, completed: 0, total: 1 },
+      },
+    ]);
+  });
+
+  test("composes with content filters", async () => {
+    const todos = createClient();
+
+    expect(descriptions(await todos.project("Garden").limit(1))).toEqual([
+      "Plant tomatoes",
+    ]);
+    expect(descriptions(await todos.search("PR").offset(1))).toEqual([
+      "Merge PR",
+    ]);
+    expect(
+      descriptions(await todos.createdAfter("2011-01-01").limit(1)),
+    ).toEqual(["Document task format"]);
+  });
+
+  test("a filter added after the slice still matches the full set", async () => {
+    const todos = createClient();
+
+    // onLine is a filter: it runs over every record, and the slice
+    // truncates its single-record result — so line 4 is found even though
+    // limit(2) drops it from the awaited array. The rule mirrors filters
+    // added after sortBy, which also ignore the step.
+    expect((await todos.limit(2).byLine(4))?.description).toBe(
+      "Document task format",
+    );
+    expect(await todos.limit(2)).toHaveLength(2);
+  });
+
+  test("returned records are copies, not the cache", async () => {
+    const todos = createClient();
+
+    const records = await todos.pending().limit(2);
+    records[0]!.description = "tampered";
+
+    expect((await todos.pending().limit(2))[0]?.description).toBe(
+      "Thank Mom for the meatballs",
+    );
+  });
+
+  test("throws TypeError for invalid arguments without reading", async () => {
+    let readCalls = 0;
+    const todos = createTodoTxt({
+      read: () => {
+        readCalls += 1;
+        return CONTENTS;
+      },
+      write: () => {},
+    });
+
+    expect(() => todos.limit(-1)).toThrow(TypeError);
+    expect(() => todos.limit(1.5)).toThrow(TypeError);
+    expect(() => todos.limit(Number.NaN)).toThrow(TypeError);
+    // @ts-expect-error -- runtime guard for untyped callers
+    expect(() => todos.limit("3")).toThrow(TypeError);
+    expect(() => todos.offset(-1)).toThrow(TypeError);
+    expect(() => todos.offset(1.5)).toThrow(TypeError);
+
+    expect(readCalls).toBe(0);
+
+    expect(await todos.pending().limit(2)).toHaveLength(2);
+    expect(readCalls).toBe(1);
+  });
+});
+
 describe("count and first", () => {
   test("count() matches the length of the same query", async () => {
     const todos = createClient();

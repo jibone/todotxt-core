@@ -9,7 +9,7 @@ Every non-empty line is parsed directly into a `TodoRecord` (JSON-friendly). The
 - `notProject(name)`, `notContext(name)`, `priority(letter)`, `search(text)`,
   `meta(key, value?)`, `hasMeta(key)`, `onLine(n)`, and the
   `createdAfter`/`createdBefore`/`completedAfter`/`completedBefore` date filters
-- `sortBy(field, direction?)`, `count()`, `first()`, and `byLine(n)`
+- `sortBy(field, direction?)`, `limit(n)`, `offset(n)`, `count()`, `first()`, and `byLine(n)`
 - `projects()` and `contexts()` pluck unique, alphabetically sorted names
 - `summary()` returns totals plus per-project/context pending/completed
   counts; `countsByProject()` and `countsByContext()` return the per-name

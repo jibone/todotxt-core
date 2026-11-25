@@ -331,3 +331,54 @@ describe("sortBy composition", () => {
     expect(await todos.sortBy("priority").count()).toBe(8);
   });
 });
+
+describe("limit and offset with sorting", () => {
+  test("the slice runs after the sort", async () => {
+    const todos = createClient();
+
+    // Top two by priority, not the file-order first two.
+    expect(descriptions(await todos.sortBy("priority").limit(2))).toEqual([
+      "Ship the sort feature",
+      "Write the sort docs",
+    ]);
+    expect(
+      descriptions(await todos.sortBy("priority", "desc").limit(2)),
+    ).toEqual(["Overdue chore", "Tidy the README"]);
+    // An offset into the null-priority group, which keeps stable file order
+    // (Add sort tests, then Design the comparator).
+    expect(
+      descriptions(await todos.sortBy("priority").offset(4).limit(2)),
+    ).toEqual(["Add sort tests", "Design the comparator"]);
+  });
+
+  test("the slice runs after a metadata sort", async () => {
+    const todos = createClient();
+
+    // due values as plain strings: 2023-12-31, 2024-01-15, 2024-03-10,
+    // not-a-date, then the records without the key in file order.
+    expect(descriptions(await todos.sortByMeta("due").limit(2))).toEqual([
+      "Overdue chore",
+      "Ship the sort feature",
+    ]);
+  });
+
+  test("aggregates see the sorted, sliced set", async () => {
+    const todos = createClient(
+      ["(B) Write docs +Docs", "(A) Ship feature +Ship", "(C) Tidy +Tidy"].join(
+        "\n",
+      ),
+    );
+
+    // The top record by priority is "Ship feature", not the file-order
+    // first "Write docs".
+    expect(await todos.sortBy("priority").limit(1).projects()).toEqual([
+      "Ship",
+    ]);
+    expect(await todos.sortBy("priority").limit(2).count()).toBe(2);
+    expect(await todos.sortBy("priority").limit(2).summary()).toMatchObject({
+      total: 2,
+      pending: 2,
+      completed: 0,
+    });
+  });
+});

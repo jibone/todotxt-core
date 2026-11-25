@@ -443,6 +443,31 @@ await todos.pending().sortByMeta("due");     // by data.due; missing last
 await todos.sortByMeta("part", "desc");      // any metadata key, not just due
 ```
 
+### limit and offset
+
+`limit` and `offset` are steps like `sortBy`: the slice runs at resolution,
+after any sort, and the last call of each wins. They cover "the first N of a
+result", which otherwise leaves the query chain:
+
+```ts
+await todos.pending().sortBy("priority").limit(5); // top 5 by priority
+await todos
+  .completed()
+  .sortBy("completedAt", "desc")
+  .limit(3);                                      // newest 3 completions
+await todos.pending().offset(10);                  // everything after the first 10
+await todos.pending().offset(10).limit(5);         // records 11 through 15
+```
+
+`limit(0)` resolves to `[]` and an offset past the end resolves to `[]`. The
+only accepted argument is a non-negative integer — anything else throws a
+`TypeError` when the query is built, before any read. Resolving terminals see
+the sliced set: `count()` equals `(await query).length`, and plucks and
+aggregates such as `projects()` and `summary()` run over the same records
+`await` would return — sorted first, then sliced. A filter step still
+matches the full record set: `limit(2).onLine(4)` finds line 4, exactly as a
+filter added after `sortBy` ignores the ordering.
+
 ### Due dates and other extension tags
 
 `due:`, `rec:`, `pri:` and every other `key:value` tag are tool conventions,
@@ -574,7 +599,9 @@ The counting rules:
   `contexts()`. Completed-only records still contribute their names; use
   `pending().summary()` (or `pending().countsByProject()`) to count pending
   work only.
-- `sortBy` steps are ignored, like the name plucks.
+- `sortBy` steps are ignored, like the name plucks — unless a
+  `limit`/`offset` slice is present, in which case the slice is positioned
+  by the sort and aggregates cover the sliced records.
 - Aggregates load through the cache like every other query.
 
 ### Case-insensitive matching
