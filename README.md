@@ -1089,10 +1089,12 @@ Use `bun run release current` only when `package.json` already contains a versio
 that has not been published yet (for example, the very first release).
 
 The release script requires a clean, in-sync `master` plus authenticated `npm`
-and `gh` CLIs. It runs the test, build, and package validation steps, then bumps
-the version, publishes to npm, pushes the release commit and tag, and creates a
-GitHub Release with generated notes. Add `--dry-run` to see the plan without
-changing anything:
+and `gh` CLIs, and a `## [<version>]` section for the new version in
+[`CHANGELOG.md`](CHANGELOG.md) — a version is not releasable without its
+changelog entry. It runs the test, build, and package validation steps, then
+bumps the version, publishes to npm, pushes the release commit and tag, and
+creates a GitHub Release with generated notes. Add `--dry-run` to see the plan
+without changing anything:
 
 ```sh
 bun run release patch --dry-run
