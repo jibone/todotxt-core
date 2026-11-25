@@ -673,6 +673,14 @@ telling you to re-query and retry, rather than silently touching the wrong
 todo. `update` cannot tell your intended changes from accidental staleness,
 so it trusts the line — re-query first if the file may have moved.
 
+The verification is exact, and tag order counts: records carry `projects`
+and `contexts` in source order, so a record whose tags you reordered — a UI
+sorting them for display, say — is stale to the three guarded APIs and
+rejects like any other mismatch. Reorder deliberately through `update()`,
+which never verifies, or re-query first. The payoff for the strictness: any
+change to the line, even an external edit that only shuffles tags, is
+caught.
+
 ### Writes are surgical
 
 Every write is a read-modify-write against current file contents: it

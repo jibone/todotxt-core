@@ -434,6 +434,12 @@ that the record still matches the file and reject with a `TodoWriteError`
 `update` cannot tell intended changes from accidental staleness, so it
 trusts the line; re-query first when the file may have moved.
 
+The match is exact, and tag order counts: `projects` and `contexts` are
+compared in the order the client reported them, so a reordered-tag record
+is stale to the guarded APIs. Reorder through `update()`, which never
+verifies, or re-query first. The strictness is deliberate: it catches every
+change to the line, including an external edit that only shuffles tags.
+
 ### Surgical splices
 
 Only the touched line is rewritten, canonically. Untouched lines keep

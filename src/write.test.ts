@@ -943,3 +943,92 @@ describe("concurrency", () => {
     expect(harness.contents).toBe("x 2026-11-22 Call Mom\n");
   });
 });
+
+describe("tag order in the staleness check", () => {
+  // Pinned policy (#40, option B): `complete`, `uncomplete`, and `delete`
+  // compare projects and contexts in the order the client reported them,
+  // so a reordered-tag record is stale. Reordering deliberately is
+  // `update()`'s job — it never verifies.
+
+  test("complete rejects a record whose projects were reordered", async () => {
+    const harness = createHarness("(A) Call Mom +Zeta +Family @phone\n");
+
+    const mom = (await harness.todos.all())[0]!;
+    mom.projects.reverse();
+
+    const failure = await capture(harness.todos.complete(mom));
+
+    expect(failure).toBeInstanceOf(TodoWriteError);
+    expect((failure as Error).message).toMatch(
+      /found a different todo at line 1/,
+    );
+    expect(harness.contents).toBe("(A) Call Mom +Zeta +Family @phone\n");
+  });
+
+  test("uncomplete rejects a record whose projects were reordered", async () => {
+    const harness = createHarness("x 2026-11-22 Call Mom +Zeta +Family\n");
+
+    const mom = (await harness.todos.all())[0]!;
+    mom.projects.reverse();
+
+    const failure = await capture(harness.todos.uncomplete(mom));
+
+    expect(failure).toBeInstanceOf(TodoWriteError);
+    expect((failure as Error).message).toMatch(
+      /found a different todo at line 1/,
+    );
+    expect(harness.contents).toBe("x 2026-11-22 Call Mom +Zeta +Family\n");
+  });
+
+  test("delete rejects a record whose projects were reordered", async () => {
+    const harness = createHarness("(A) Call Mom +Zeta +Family\n");
+
+    const mom = (await harness.todos.all())[0]!;
+    mom.projects.reverse();
+
+    const failure = await capture(harness.todos.delete(mom));
+
+    expect(failure).toBeInstanceOf(TodoWriteError);
+    expect((failure as Error).message).toMatch(
+      /found a different todo at line 1/,
+    );
+    expect(harness.contents).toBe("(A) Call Mom +Zeta +Family\n");
+  });
+
+  test("reordered contexts are stale as well", async () => {
+    const harness = createHarness("(A) Call Mom @phone @errands\n");
+
+    const mom = (await harness.todos.all())[0]!;
+    mom.contexts.reverse();
+
+    const failure = await capture(harness.todos.complete(mom));
+
+    expect(failure).toBeInstanceOf(TodoWriteError);
+    expect(harness.contents).toBe("(A) Call Mom @phone @errands\n");
+  });
+
+  test("the unmodified record still passes the guard", async () => {
+    const harness = createHarness("(A) Call Mom +Zeta +Family @phone\n");
+
+    const mom = (await harness.todos.all())[0]!;
+    await harness.todos.complete(mom);
+
+    // The guard accepts the record as reported; the written line is
+    // canonical, so its tags end up alphabetized regardless.
+    expect(harness.contents).toBe(
+      "x 2026-11-22 Call Mom +Family +Zeta @phone\n",
+    );
+  });
+
+  test("a different tag set still rejects", async () => {
+    const harness = createHarness("(A) Call Mom +Family +Zeta\n");
+
+    const mom = (await harness.todos.all())[0]!;
+    mom.projects = ["Zeta", "Alpha"];
+
+    const failure = await capture(harness.todos.delete(mom));
+
+    expect(failure).toBeInstanceOf(TodoWriteError);
+    expect(harness.contents).toBe("(A) Call Mom +Family +Zeta\n");
+  });
+});
