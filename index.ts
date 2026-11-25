@@ -26,7 +26,6 @@ export type {
   ParseWarningHandler,
   TodoAddInput,
   TodoClientOptions,
-  TodoFileHooks,
   TodoHooks,
   TodoLogger,
   TodoRecord,

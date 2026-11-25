@@ -288,10 +288,9 @@ inherited keys.
 
 Warnings are non-fatal: a `TodoRecord` is always returned. Pass `onWarning` in
 a `ParseOptions` object to `parseLine` or `parseDocument` to receive them;
-`parseDocument` adds the 1-based physical line number. Passing the handler
-directly as the second argument is deprecated but still supported and will be
-removed in 1.0.0. `parseDocumentResult` returns the records, the warnings in
-document order, and the line counts together as data.
+`parseDocument` adds the 1-based physical line number. `parseDocumentResult`
+returns the records, the warnings in document order, and the line counts
+together as data.
 
 | Code | Meaning | Record effect |
 | --- | --- | --- |

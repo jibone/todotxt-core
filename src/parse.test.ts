@@ -464,8 +464,10 @@ describe("parseDocumentResult", () => {
 describe("parse warnings", () => {
   test("parseLine reports duplicate metadata keys without a line number", () => {
     const warnings: ParseWarning[] = [];
-    const item = parseLine("Task due:2010-01-02 due:2010-02-02", (warning) => {
-      warnings.push(warning);
+    const item = parseLine("Task due:2010-01-02 due:2010-02-02", {
+      onWarning: (warning) => {
+        warnings.push(warning);
+      },
     });
 
     expect(item.data).toEqual({ due: "2010-02-02" });
@@ -486,8 +488,10 @@ describe("parse warnings", () => {
     const warnings: ParseWarning[] = [];
     parseDocument(
       ["(A) First", "", "Task due:a due:b", "Task rec:1w rec:2w"].join("\n"),
-      (warning) => {
-        warnings.push(warning);
+      {
+        onWarning: (warning) => {
+          warnings.push(warning);
+        },
       },
     );
 
@@ -498,8 +502,10 @@ describe("parse warnings", () => {
 
   test("does not warn about unique metadata keys", () => {
     const warnings: ParseWarning[] = [];
-    parseDocument("Task due:2010-01-02 rec:1w", (warning) => {
-      warnings.push(warning);
+    parseDocument("Task due:2010-01-02 rec:1w", {
+      onWarning: (warning) => {
+        warnings.push(warning);
+      },
     });
 
     expect(warnings).toEqual([]);

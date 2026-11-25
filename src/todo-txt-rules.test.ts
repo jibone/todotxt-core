@@ -165,7 +165,7 @@ describe("Rule 2: creation date directly after priority", () => {
 
   test("warns about an invalid creation date and keeps it in the text", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("2011-99-99 Broken date", onWarning);
+    const item = parseLine("2011-99-99 Broken date", { onWarning });
 
     expect(item).toEqual(record({ description: "2011-99-99 Broken date" }));
     expect(warnings).toHaveLength(1);
@@ -179,7 +179,7 @@ describe("Rule 2: creation date directly after priority", () => {
 
   test("warns about an invalid creation date after a priority", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("(A) 2011-99-99 Call Mom", onWarning);
+    const item = parseLine("(A) 2011-99-99 Call Mom", { onWarning });
 
     expect(item).toEqual(
       record({
@@ -193,7 +193,7 @@ describe("Rule 2: creation date directly after priority", () => {
 
   test("does not consider a later date when the leading one is invalid", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("2011-99-99 2011-03-01 Task", onWarning);
+    const item = parseLine("2011-99-99 2011-03-01 Task", { onWarning });
 
     expect(item).toEqual(
       record({ description: "2011-99-99 2011-03-01 Task" }),
@@ -203,7 +203,7 @@ describe("Rule 2: creation date directly after priority", () => {
 
   test("reports invalid-date warnings with a 1-based line number", () => {
     const { warnings, onWarning } = collectWarnings();
-    parseDocument("(A) First\n\n2011-99-99 Broken", onWarning);
+    parseDocument("(A) First\n\n2011-99-99 Broken", { onWarning });
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.line).toBe(3);
@@ -418,7 +418,7 @@ describe("Rule 4: completed tasks start with lowercase x and a space", () => {
 
   test("warns about an invalid completion date", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("x 2011-99-99 Call Mom", onWarning);
+    const item = parseLine("x 2011-99-99 Call Mom", { onWarning });
 
     expect(item).toEqual(
       record({ completed: true, description: "2011-99-99 Call Mom" }),
@@ -433,7 +433,7 @@ describe("Rule 4: completed tasks start with lowercase x and a space", () => {
 
   test("warns once when a completed line has an invalid leading date", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("x 2011-99-99 2011-03-01 Task", onWarning);
+    const item = parseLine("x 2011-99-99 2011-03-01 Task", { onWarning });
 
     expect(item).toEqual(
       record({
@@ -447,7 +447,7 @@ describe("Rule 4: completed tasks start with lowercase x and a space", () => {
 
   test("warns about an invalid creation date on a completed task", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("x 2011-03-02 2011-99-99 Task", onWarning);
+    const item = parseLine("x 2011-03-02 2011-99-99 Task", { onWarning });
 
     expect(item).toEqual(
       record({
@@ -515,7 +515,9 @@ describe("Rule 5: extra metadata is key:value", () => {
 
   test("keeps the last value and warns when a key is repeated", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("Task due:2010-01-02 due:2010-02-02", onWarning);
+    const item = parseLine("Task due:2010-01-02 due:2010-02-02", {
+      onWarning,
+    });
 
     expect(item).toEqual(
       record({ description: "Task", data: { due: "2010-02-02" } }),
@@ -551,7 +553,7 @@ describe("Rule 5: extra metadata is key:value", () => {
 describe("Rule 5: __proto__ is a reserved metadata key", () => {
   test("keeps a __proto__ token in the description and warns", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("task __proto__:polluted", onWarning);
+    const item = parseLine("task __proto__:polluted", { onWarning });
 
     expect(item).toEqual(record({ description: "task __proto__:polluted" }));
     expect(warnings).toHaveLength(1);
@@ -566,7 +568,7 @@ describe("Rule 5: __proto__ is a reserved metadata key", () => {
 
   test("warns once per __proto__ token, never as a duplicate key", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("a __proto__:x __proto__:y", onWarning);
+    const item = parseLine("a __proto__:x __proto__:y", { onWarning });
 
     expect(item).toEqual(record({ description: "a __proto__:x __proto__:y" }));
     expect(warnings.map((warning) => warning.code)).toEqual([
@@ -577,7 +579,7 @@ describe("Rule 5: __proto__ is a reserved metadata key", () => {
 
   test("reports reserved-key warnings with a 1-based line number", () => {
     const { warnings, onWarning } = collectWarnings();
-    parseDocument("(A) First\n\ntask __proto__:polluted", onWarning);
+    parseDocument("(A) First\n\ntask __proto__:polluted", { onWarning });
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.line).toBe(3);
@@ -586,7 +588,7 @@ describe("Rule 5: __proto__ is a reserved metadata key", () => {
   test("parsing never modifies Object.prototype", () => {
     parseDocument(
       "task __proto__:polluted constructor:shadowed toString:hi prototype:y",
-      collectWarnings().onWarning,
+      { onWarning: collectWarnings().onWarning },
     );
 
     expect(Object.hasOwn(Object.prototype, "polluted")).toBe(false);
@@ -607,7 +609,7 @@ describe("Rule 5: __proto__ is a reserved metadata key", () => {
 
   test("duplicate warnings still apply to inherited property names", () => {
     const { warnings, onWarning } = collectWarnings();
-    const item = parseLine("task toString:a toString:b", onWarning);
+    const item = parseLine("task toString:a toString:b", { onWarning });
 
     expect(item).toEqual(
       record({ description: "task", data: { toString: "b" } }),

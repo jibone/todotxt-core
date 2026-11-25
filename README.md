@@ -918,9 +918,8 @@ be real calendar dates in `YYYY-MM-DD` form; a shape-valid but nonexistent date
 such as `2011-99-99` is treated as text and reported as an `invalid-date`
 warning. Collect warnings by passing `onWarning` in a `ParseOptions` object, or
 get them back as data with
-[`parseDocumentResult`](#warnings-and-errors-as-data); passing the handler
-directly as the second argument is deprecated but still supported and will be
-removed in 1.0.0. The full rule-by-rule interpretation is documented in
+[`parseDocumentResult`](#warnings-and-errors-as-data). The full rule-by-rule
+interpretation is documented in
 [How todotxt-core parses todo.txt](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md).
 
 ### Untrusted input and resource limits
