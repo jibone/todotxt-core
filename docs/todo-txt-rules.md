@@ -411,9 +411,10 @@ client — so concurrent mutations apply one after another. Nothing
 coordinates across clients or processes: two writers on one file (two
 clients, two processes, or a client and an external editor) are
 last-write-wins, and a lost write surfaces no error. Use one client per
-file per process, and give the `write` hook atomic writes — a temporary
-file plus a rename — so a crash mid-write cannot truncate the file (see
-[#44](https://github.com/jibone/todotxt-core/issues/44)).
+file per process, and give a custom `write` hook atomic writes — a
+temporary file plus a rename — so a crash mid-write cannot truncate the
+file. The bundled Node adapter already writes this way; see
+[Node adapter](#node-adapter) in the README.
 
 A query that started before the write may still resolve with the pre-write
 snapshot for its own callers; the reparse still replaces the cache, so the

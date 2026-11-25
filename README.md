@@ -162,14 +162,19 @@ const todos = createNodeTodoTxt("todo.txt");
 The adapter reads and writes through `node:fs/promises`, so it supplies both
 hooks: a client created through it is always write-enabled (see
 [Writing](#writing)) and its records always carry `line`. `path` is a file
-path or `URL`, passed straight to `readFile` and `writeFile`; `encoding`
-selects the file's character encoding (default `"utf8"`); and
-`includeSource`, `caseSensitive`, `today`, and `logger` are the same options
-[`createTodoTxt`](#usage) accepts. Every client behavior — caching,
-filtering, warnings, [staleness checks](#staleness-checks), serialized
-writes — is unchanged.
+path or `URL`; `encoding` selects the file's character encoding (default
+`"utf8"`); and `includeSource`, `caseSensitive`, `today`, and `logger` are
+the same options [`createTodoTxt`](#usage) accepts. Every client behavior —
+caching, filtering, warnings, [staleness checks](#staleness-checks),
+serialized writes — is unchanged.
 
-Filesystem errors propagate untouched: `readFile` and `writeFile` reject
+Writes are atomic by default: the new contents go to a sibling temp file in
+the same directory, which is renamed over the target. POSIX rename is
+atomic, so a crash mid-write swaps the file whole or not at all — a
+`todo.txt` can no longer be truncated by a torn write. An existing
+target's permissions are preserved across writes.
+
+Filesystem errors propagate untouched: the `node:fs/promises` calls reject
 with `Error` instances carrying a `code` such as `ENOENT`, which the client
 passes through rather than wrapping in `TodoReadError` or `TodoWriteError`:
 
