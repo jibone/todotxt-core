@@ -37,6 +37,10 @@ in majors only, and the public surface — the core entry, the `/node` and
 
 ### Documentation and tooling
 
+- The not-production-ready banner is replaced by a Stability section
+  (#42): the semver scope, the public surface (the core entry, the `/node`
+  and `/ext` subpaths, `TodoRecord`, the error contract, the `ParseWarning`
+  codes), the deprecation policy, and the deliberate non-promises.
 - The physical-line splice machinery stays internal by design (#47); the
   write APIs are the supported way to touch a todo.txt file. A post-1.0
   opt-in subpath is tracked in #50.

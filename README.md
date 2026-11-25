@@ -6,9 +6,9 @@ Every non-empty line is parsed directly into a JSON-friendly `TodoRecord`. The
 library performs no IO. You provide callbacks for reading and writing the file,
 so it works with Bun, Node, a database, or anything else.
 
-> [!WARNING]
-> This library is under active development and is not yet recommended for
-> production use. Its API may change without notice.
+> [!NOTE]
+> Stable since 1.0.0 — see [Stability](#stability) for what is frozen and
+> how changes are handled.
 
 ## Install
 
@@ -1066,6 +1066,49 @@ itself still runs on Node 20+. `todo-node-adapter.ts` uses the
 [`node` adapter](#node-adapter), and `examples/todo-node-adapter.ts` runs the
 same adapter under Bun. `todo-write.ts` tours the
 [write APIs](#writing) against a real temp file.
+
+## Stability
+
+From 1.0.0 the package follows semantic versioning: breaking changes land
+in majors only, minors add capability, and patches fix behavior.
+
+The public surface is:
+
+- the exports of the core entry (`@jibone/todotxt-core`), the
+  [`node`](#node-adapter) and [`ext`](#due-dates-and-other-extension-tags)
+  subpaths
+- the `TodoRecord` shape
+- the error contract: `TodoReadError`, `TodoWriteError`, and `TypeError`
+  for invalid write content
+- the `ParseWarning` codes
+
+Anything not exported — the physical-line splice machinery, the content
+fingerprinting, everything in `src/` without an `index.ts` export — is
+internal and may change in a minor.
+
+Deprecations follow the model already proven once: a surface is marked
+`@deprecated` in a minor with its removal major named, and removed in that
+major only. 0.x deprecated the positional `onWarning` overloads and
+`TodoFileHooks` for 1.0.0, and 1.0.0 removed exactly those — the history is
+in [`CHANGELOG.md`](CHANGELOG.md).
+
+Deliberately not promised, because the format itself does not define them:
+
+- **Extension-tag semantics.** `due:`, `pri:`, and friends are consumer
+  conventions; the core parses every `key:value` into `data` and stops
+  there. The `/ext` helpers are conveniences, not the format.
+- **Round-trip fidelity.** Formatting is canonical and lossy in a
+  documented way — `todo.raw ?? formatRecord(todo)` is the idiom for the
+  exact source line.
+- **Stable IDs.** todo.txt has none: a line number is a position, and
+  writes can move lines.
+- **Comments, sanitization, or size limits.** The parser treats `#` lines
+  as tasks, emits parsed text as-is, and imposes no line limits — see
+  [Limits and non-goals](https://github.com/jibone/todotxt-core/blob/master/docs/todo-txt-rules.md#limits-and-non-goals).
+
+The runtime claims are backed by CI: the test suite runs under Bun, and a
+smoke test exercises the built package under Node and Deno after every
+build.
 
 ## Development
 
